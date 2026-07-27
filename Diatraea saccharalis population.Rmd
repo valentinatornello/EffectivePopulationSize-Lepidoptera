@@ -1,0 +1,147 @@
+---
+title: "Effective Population Size Analysis"
+author: "Valentina Tornello, Carla Serre"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+# Introduction
+
+Describe the goals of the effective population size analysis and any data sources.
+
+# Data Import
+
+```{r load-data}
+# Load necessary libraries
+library(readr)
+library(lubridate)
+library(tidyr)
+library(stringr)
+library(purrr)
+library(readxl)
+library(dplyr)
+library(knitr)
+
+# Read original data: Progreso de Actividades Insectario
+data <- read_excel("LepidopteranData-2024-7-2026.xlsx")
+
+    # Rename columns and filter for Diatraea saccharalis in the "Cría" stage.
+    # The "Status" column is used to filter out pending activities,
+    # and new columns for year and week are created.
+datos_diatraea <- data %>%
+  rename(
+    Actividad              = Activity,
+    Especie               = Especie,
+    Cantidad              = Cantidad,
+    Target                = Target,
+    Lote_produccion       = `Lote de Producción`,
+    Notas                 = Notas,
+    Status                = Status,
+    Fecha_programada      = `Fecha programada`,
+    Responsable           = Responsable,
+    Fecha_realizacion     = `Fecha de realización`,
+    Codigo_barras_lote    = `Valor de Código de Barras del Lote`,
+    Etapa                 = Etapa
+  ) %>%
+  filter(
+    Especie == "D. saccharalis",
+    Etapa == "Cría",
+    Status != "Pendiente"
+  ) %>%
+  mutate(
+    year   = year(Fecha_realizacion),
+    week   = isoweek(Fecha_realizacion)
+  )
+
+# Convert 'Cantidad' and 'Target' columns to numeric
+datos_diatraea <- datos_diatraea %>%
+  mutate(
+    Cantidad = as.numeric(Cantidad),
+    Target   = as.numeric(Target),
+    Actividad = trimws(Actividad)
+  )
+```
+
+# Data Exploration
+
+```{r explore-data}
+# glimpse(data)
+
+# Summary statistics by activity, using the column Cantidad
+resumen_diatraea <- bind_rows(
+ datos_diatraea %>%
+    filter(Actividad == "Inoculación") %>%
+    summarise(
+      Variable = "Huevos Inoculados",
+      Media = mean(Cantidad, na.rm = TRUE),
+      Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+      N = sum(!is.na(Cantidad))
+    ),
+ datos_diatraea %>%
+    filter(Actividad == "Viabilidad de huevos") %>%
+    summarise(
+      Variable = "Viabilidad de huevos (%)",
+      Media = mean(Cantidad, na.rm = TRUE),
+      Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+      N = sum(!is.na(Cantidad))
+    ),
+  datos_diatraea %>%
+    filter(Actividad == "Transferencia") %>%
+    summarise(
+      Variable = "Larvas Transferidas",
+      Media = mean(Cantidad, na.rm = TRUE),
+      Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+      N = sum(!is.na(Cantidad))
+    ), 
+ datos_diatraea %>%
+    filter(Actividad == "Colecta de pupas") %>%
+    summarise(
+      Variable = "Pupas Colectadas",
+      Media = mean(Cantidad, na.rm = TRUE),
+      Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+      N = sum(!is.na(Cantidad))
+    ),
+ datos_diatraea %>%
+    filter(Actividad == "Pupae Recovery") %>%
+    summarise(
+      Variable = "Pupae Recovery (%)",
+      Media = mean(Cantidad, na.rm = TRUE),
+      Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+      N = sum(!is.na(Cantidad))
+    )
+)
+
+# View the results
+resumen_diatraea
+
+kable(resumen_diatraea, digits = 2, 
+col.names = c("Variable", "Media", "Desvío estándar", "N"))
+
+```
+
+# Analysis
+
+```{r analysis}
+# Perform effective population size estimation or other analyses
+```
+
+# Results
+
+Summarize the results of the analysis here.
+
+# Conclusion
+
+Provide conclusions and next steps.
