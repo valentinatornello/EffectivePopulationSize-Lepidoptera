@@ -16,25 +16,28 @@ library(ggplot2)
 #data <- read_excel("LepidopteranData-2024-7-2026.xlsx")
 data <- read_excel("CriadeLep-7-2026.xlsx")
 
-print(head(data))
+head(data)
 
     # Rename columns and filter for Diatraea saccharalis in the "Cría" stage.
     # The "Status" column is used to filter out pending activities,
     # and new columns for year and week are created.
 datos_diatraea <- data |>
-rename(
-    Lote_produccion = `Lote de Produccion`,
-  ) |>
+  select(-c(Ayudantes, Responsable,
+            `Verificación de errores`, `Cant. de adult. muertos`,
+            `Lote de dieta`,
+            `Valor de Código de Barras del Lote`, Created
+            `Hora/Minuto Inicial`)) |>
+  rename(Lote_produccion = `Lote de Produccion`) |>
   filter(
     Especie == "D. saccharalis",
     Etapa == "Cría",
-    # filtrar desde 2024 hasta la actualidad
     Fecha >= as.Date("2024-01-01")
   ) |>
   mutate(
-    year   = year(Fecha),
-    week   = isoweek(Fecha)
+    year = year(Fecha),
+    week = isoweek(Fecha)
   )
+datos_diatraea
 
 # Convert 'Cantidad' 
 datos_diatraea <- datos_diatraea %>%
@@ -64,6 +67,15 @@ qc_plot <- datos_diatraea %>%
     na_percentage = (na_count / total) * 100
   )
 qc_plot
+ggplot(qc_plot, aes(x = Actividad, y = na_percentage)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Porcentaje de datos faltantes por actividad",
+    x = "Actividad",
+    y = "Porcentaje de datos faltantes (%)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 # Calculamos el Pupae Recovery por lote de producción pupas/larvas*100
 # Creamos la nueva variable Pupae_Recovery en el dataframe datos_diatraea
@@ -81,10 +93,23 @@ pupae_recovery
 # Diagnóstico: lotes con pupas pero sin larvas transferidas registradas
 lotes_sin_transferencia <- pupae_recovery %>%
   filter(larvas_transferidas == 0, pupas_colectadas > 0)
-message("Lotes con pupas pero larvas_transferidas = 0 (revisar registro de Transferencia):")
+message("Lotes con pupas pero larvas_transferidas = 0 
+(revisar registro de Transferencia):")
 print(lotes_sin_transferencia)
-message("Lotes con Pupae_Recovery NA: ", sum(is.na(pupae_recovery$Pupae_Recovery)))
+message("Lotes con Pupae_Recovery NA: ", 
+sum(is.na(pupae_recovery$Pupae_Recovery)))
 
+# Eliminamos los lotes que tengan NA pupae recovery
+pupae_recovery <- pupae_recovery %>%
+  filter(!is.na(Pupae_Recovery))
+pupae_recovery
+
+#Eliminamos también los lotes que tengan pupas colectadas pero 
+#larvas transferidas = 0
+datos_diatraea <- datos_diatraea %>%
+  filter(!(Lote_produccion %in% lotes_sin_transferencia$Lote_produccion))
+
+datos_diatraea
 
   # Calculamos la cantidad de lotes de producción que evaluamos
   lotes_evaluados <- datos_diatraea %>% group_by(Lote_produccion) %>% 
@@ -143,10 +168,19 @@ adultos_por_lote <- datos_diatraea %>%
   filter(Actividad == "Colecta de pupas") %>%
   group_by(Lote_produccion) %>%
   summarise(
-    # Se multiplica el número de pupas colectadas por 0.6 para estimar el número de adultos emergidos
+    # Se multiplica el número de pupas colectadas por 0.6 
+    #para estimar el número de adultos emergidos
     N_adultos = sum(Cantidad, na.rm = TRUE) * 0.6,
     .groups   = "drop"
   )
+adultos_por_lote
+
+# Agregar una columna con el Pupae Recovery(%) por lote y el número total de adultos emergidos
+datos_diatraea <- datos_diatraea %>%
+  left_join(pupae_recovery, by = "Lote_produccion") %>%
+  left_join(adultos_por_lote, by = "Lote_produccion")
+datos_diatraea
+
 N_adultos_total <- sum(adultos_por_lote$N_adultos, na.rm = TRUE)
 N_adultos_total
 adultos_por_lote
