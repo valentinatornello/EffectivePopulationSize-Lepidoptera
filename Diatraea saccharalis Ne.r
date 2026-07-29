@@ -22,11 +22,6 @@ head(data)
     # The "Status" column is used to filter out pending activities,
     # and new columns for year and week are created.
 datos_diatraea <- data |>
-  select(-c(Ayudantes, Responsable,
-            `Verificación de errores`, `Cant. de adult. muertos`,
-            `Lote de dieta`,
-            `Valor de Código de Barras del Lote`, Created
-            `Hora/Minuto Inicial`)) |>
   rename(Lote_produccion = `Lote de Produccion`) |>
   filter(
     Especie == "D. saccharalis",
