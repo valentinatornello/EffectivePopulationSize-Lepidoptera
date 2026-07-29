@@ -1,0 +1,52 @@
+---
+title: "Effective Population Size Analysis"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+# Introduction
+
+Describe the goals of the effective population size analysis and any data sources.
+
+# Data Import
+
+```{r load-data}
+# Load libraries and import data here
+library(tidyverse)
+# data <- read_csv("data/your_data.csv")
+```
+
+# Data Exploration
+
+```{r explore-data}
+# Summarize and visualize your data
+# glimpse(data)
+```
+
+# Analysis
+
+```{r analysis}
+# Perform effective population size estimation or other analyses
+```
+
+# Results
+
+Summarize the results of the analysis here.
+
+# Conclusion
+
+Provide conclusions and next steps.
