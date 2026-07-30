@@ -1,0 +1,12 @@
+name: diatraea_saccharalis_ne
+title: Diatraea saccharalis Ne
+username: valentinatornellobayer
+account: valentinatornellobayer
+server: connect.posit.cloud
+hostUrl: https://api.connect.posit.cloud/v1
+appId: 019fb354-c334-a4d2-50e2-0a4185cba54d
+bundleId:
+url: https://connect.posit.cloud/valentinatornellobayer/content/019fb354-c334-a4d2-50e2-0a4185cba54d
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

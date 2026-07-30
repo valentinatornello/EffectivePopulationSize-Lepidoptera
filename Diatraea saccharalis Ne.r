@@ -10,15 +10,15 @@ library(readxl)
 library(dplyr)
 library(knitr)
 library(ggplot2)
-
+install.packages("tinytex")
 # Read new data: Progreso de Actividades Insectario from 2024
 # Read original data: Cria de Lep from 2022
 #data <- read_excel("LepidopteranData-2024-7-2026.xlsx")
 data <- read_excel("CriadeLep-7-2026.xlsx")
 
 head(data)
-
-    # Rename columns and filter for Diatraea saccharalis in the "Cría" stage.
+rmarkdown::render("Diatraea saccharalis Ne.Rmd")
+# Rename columns and filter for Diatraea saccharalis in the "Cría" stage.
     # The "Status" column is used to filter out pending activities,
     # and new columns for year and week are created.
 datos_diatraea <- data |>
@@ -41,6 +41,8 @@ datos_diatraea <- datos_diatraea %>%
     Actividad = trimws(Actividad),
     Lote_produccion = as.numeric(Lote_produccion)
   )
+  library(knitr)
+  rmarkdown::render("Diatraea saccharalis Ne.Rmd")
 
 # Clean data by removing rows with NA in 'Cantidad' and 'Activity'
 # and filter out any rows where Viabilidad de huevos or Pupae Recovery are <0 and > 100
@@ -62,15 +64,6 @@ qc_plot <- datos_diatraea %>%
     na_percentage = (na_count / total) * 100
   )
 qc_plot
-ggplot(qc_plot, aes(x = Actividad, y = na_percentage)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  labs(
-    title = "Porcentaje de datos faltantes por actividad",
-    x = "Actividad",
-    y = "Porcentaje de datos faltantes (%)"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 # Calculamos el Pupae Recovery por lote de producción pupas/larvas*100
 # Creamos la nueva variable Pupae_Recovery en el dataframe datos_diatraea
@@ -218,7 +211,6 @@ datos_diatraea_transpose <- datos_diatraea_transpose %>%
       NA_real_
     )
   )
-
   # Resumen media y DE de datos_diatraea_transpose
 resumen_diatraea_transpose <- datos_diatraea_transpose %>%
   summarise(
@@ -242,6 +234,11 @@ kable(resumen_diatraea_transpose, digits = 2,
         "Ne Media", "Ne DE"
       ))
 
+ # Agregar columna año de la base original a datos_diatraea_transpose, para poder hacer gráficos de tendencia a lo largo de los años
+datos_diatraea_transpose <- datos_diatraea_transpose %>%
+  left_join(datos_diatraea %>% select(Lote_produccion, year) %>% distinct(), by = "Lote_produccion")
+
+datos_diatraea_transpose
 
 # Obtener el n muestral para realizar una investigación de cada variable
 # de una muestra para D. saccharalis, con un nivel de confianza del 90%
@@ -498,3 +495,37 @@ grafico_ne <- ggplot(ne_promedio, aes(x = Variable, y = Ne, fill = Variable)) +
         axis.text.x = element_text(angle = 20, hjust = 1))
 
 grafico_ne
+
+# Gráfico a lo largo de los años, para ver la tendencia de Huevos Lavados, Transferencia, Coleta de pupas y Adultos emergidos 
+#(siempre agrupando por lote de producción y sumando la cantidad de cada actividad)
+# FILTRAR SOLO ESAS 4 VARIABLES, Y AGRUPAR POR AÑO, LOTE DE PRODUCCIÓN Y ACTIVIDAD, SUMANDO LA CANTIDAD
+years_trend <- datos_diatraea_transpose %>%
+  select(Lote_produccion, year, Transferencia, `Colecta de pupas`, `Adultos emergidos`) %>%
+  pivot_longer(cols = c(Transferencia, `Colecta de pupas`, `Adultos emergidos`), 
+               names_to = "Actividad", values_to = "Cantidad") %>%
+  group_by(year, Actividad) %>%
+  summarise(Cantidad = sum(Cantidad, na.rm = TRUE), .groups = "drop")
+
+# ¿Qué sucede con la población si yo mantengo el Ne de adultos propuesto por varias generaciones?
+# ¿Cuál es mi endocría?
+#Finalmente, podemos calcular la endogamia esperada (F) después de varias generaciones usando la fórmula F = 1 - (1 - 1/(2*Ne))^t, donde t es el número de generaciones. Esto nos permitirá evaluar cómo la reducción del tamaño efectivo de la población afecta la diversidad genética a lo largo del tiempo.
+endogamia_esperada <- function(Ne, t) {
+  F <- 1 - (1 - 1/(2*Ne))^t
+  return(F)
+}
+endogamia_esperada(Ne = ne_harm, t = 10)  # Por ejemplo, después de 10 generaciones
+
+# 0.02895238 significa que después de 10 generaciones, la endogamia esperada es de aproximadamente 2.9%, lo que indica una pérdida moderada de diversidad genética.
+
+# Tabla de endogamia esperada para diferentes valores de Ne y número de generaciones
+ne_values <- c(10, 20, 50, 100, 200)
+
+generations <- c(1, 5, 10, 20, 50)
+
+endogamia_table <- expand.grid(Ne = ne_values, Generations = generations) %>%
+  mutate(F = endogamia_esperada(Ne, Generations))
+
+endogamia_table
+
+tinytex::install_tinytex()
+rmarkdown::render("Diatraea saccharalis Ne.Rmd")

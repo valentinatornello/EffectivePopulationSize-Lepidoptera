@@ -1,0 +1,699 @@
+---
+title: "Tamaño Efectivo de Población (*Diatraea saccharalis*) en la colonia del Insectario de Argentina"
+author: "Valentina Tornello, Carla Serre"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    highlight: tango
+    latex_engine: xelatex
+---
+rmarkdown::render("Diatraea saccharalis Ne.Rmd")
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width  = 8,
+  fig.height = 5,
+  fig.align  = "center"
+)
+```
+
+---
+
+# Introducción
+
+*Diatraea saccharalis* (Fabricius, 1794) (Lepidoptera: Crambidae), conocida comúnmente como el barrenador del tallo del maíz y la caña de azúcar, es una de las plagas lepidópteras de mayor impacto económico en América Latina. Su control biológico mediante agentes como *Cotesia flavipes* y *Trichogramma* spp. depende de la disponibilidad continua de individuos criados en insectario, lo que exige mantener colonias de laboratorio con alta vitalidad y diversidad genética.
+
+## Tamaño Efectivo de Población (Ne) en colonias de insectario
+
+El **tamaño efectivo de población (Ne)** es un concepto fundamental en genética de poblaciones que describe el número de individuos reproductores en una población idealizada de Wright-Fisher que experimentaría la misma tasa de deriva genética que la población real. A diferencia del tamaño censal (N), Ne captura el impacto de factores como la varianza en el número de descendientes, la proporción de sexos no equitativa, fluctuaciones en el tamaño poblacional y la superposición de generaciones.
+
+En el contexto de colonias de insectario, el monitoreo del Ne es crítico porque:
+
+- **La deriva genética** en Ne pequeños conduce a la pérdida aleatoria de alelos, reduciendo la variabilidad genética disponible para la adaptación.
+- **La endogamia (inbreeding)** acumulada a lo largo de generaciones sucesivas deprime la condición física de los individuos (*inbreeding depression*), afectando la fecundidad, viabilidad de huevos y supervivencia larvaria.
+- Los insectarios de cría masiva son especialmente vulnerables a **cuellos de botella poblacionales** en etapas críticas del ciclo de vida.
+
+La estimación del Ne a partir de datos de producción permite detectar de forma temprana estos riesgos y ajustar los protocolos de manejo para preservar la integridad genética de la colonia a largo plazo.
+
+---
+
+# Carga de librerías y datos
+
+```{r librerias}
+library(readr)
+library(lubridate)
+library(tidyr)
+library(stringr)
+library(purrr)
+library(readxl)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(ggpubr)
+```
+
+Los datos provienen de la carga de datos diaria desde una aplicación del insectario de Fontezuela (planilla *CriadeLep*), que consigna cada actividad del ciclo de cría (lavado de huevos, inoculación, transferencia de larvas, colecta de pupas) identificada por lote de producción (`Lote_produccion`), fecha y especie.
+
+```{r carga-datos}
+data <- read_excel("CriadeLep-7-2026.xlsx")
+head(data)
+```
+
+---
+
+# Filtrado y preparación de datos
+
+## Selección de registros de *D. saccharalis*
+
+Se retienen únicamente los registros correspondientes a la especie *D. saccharalis* en la etapa de **Cría**, a partir del 1 de enero de 2024. Se crean variables auxiliares de año (`year`) y semana ISO (`week`) para análisis temporales posteriores.
+
+```{r filtrado-especie}
+datos_diatraea <- data |>
+  rename(Lote_produccion = `Lote de Produccion`) |>
+  filter(
+    Especie == "D. saccharalis",
+    Etapa   == "Cría",
+    Fecha   >= as.Date("2024-01-01")
+  ) |>
+  mutate(
+    year = year(Fecha),
+    week = isoweek(Fecha)
+  )
+datos_diatraea
+```
+
+## Conversión y limpieza de tipos
+
+Se asegura que `Cantidad` sea numérica y se eliminan espacios residuales en la columna `Actividad`, lo cual es esencial para que los filtros y agrupaciones posteriores funcionen correctamente.
+
+```{r conversion-tipos}
+datos_diatraea <- datos_diatraea %>%
+  mutate(
+    Cantidad         = as.numeric(Cantidad),
+    Actividad        = trimws(Actividad),
+    Lote_produccion  = as.numeric(Lote_produccion)
+  )
+```
+
+## Control de calidad: valores faltantes
+
+Se eliminan filas con `NA` en `Cantidad` o `Actividad`, que corresponden a registros incompletos o pendientes en el sistema de seguimiento.
+
+```{r limpieza-na}
+datos_diatraea <- datos_diatraea %>%
+  filter(!is.na(Cantidad), !is.na(Actividad))
+```
+
+### Diagnóstico de valores faltantes por actividad
+
+El siguiente gráfico muestra el porcentaje de registros con `NA` para cada actividad antes de la limpieza, permitiendo identificar etapas del ciclo con mayor frecuencia de datos faltantes.
+
+```{r qc-plot}
+qc_plot <- datos_diatraea %>%
+  group_by(Actividad) %>%
+  summarise(
+    total     = n(),
+    na_count  = sum(is.na(Cantidad)),
+    .groups   = "drop"
+  ) %>%
+  mutate(na_percentage = (na_count / total) * 100)
+
+kable(qc_plot, digits = 2,
+      col.names = c("Actividad", "Total registros", "NAs", "% NAs"),
+      caption    = "Control de calidad: datos faltantes por actividad")
+```
+
+---
+
+# Cálculo del *Pupae Recovery*
+
+## Fundamento biológico
+
+El **Pupae Recovery** (o tasa de recuperación de pupas) es la proporción de larvas transferidas al sustrato de cría que alcanzan exitosamente el estado de pupa. Esta métrica integra la mortalidad larval por causas bióticas (canibalismo, patógenos del sustrato, hongos entomopatógenos) y abióticas (condiciones de temperatura y humedad, calidad del sustrato). Valores por debajo del umbral esperado para la especie pueden indicar deterioro en la calidad del sustrato, contaminación fúngica o bacterial, o señales de depresión por endogamia a nivel larvario.
+
+$$PR = \frac{N_{pupas\,colectadas}}{N_{larvas\,transferidas}} \times 100$$
+
+```{r pupae-recovery}
+pupae_recovery <- datos_diatraea %>%
+  filter(Actividad %in% c("Transferencia", "Colecta de pupas")) %>%
+  group_by(Lote_produccion) %>%
+  summarise(
+    larvas_transferidas = sum(Cantidad[Actividad == "Transferencia"],    na.rm = TRUE),
+    pupas_colectadas    = sum(Cantidad[Actividad == "Colecta de pupas"], na.rm = TRUE),
+    Pupae_Recovery      = ifelse(
+      larvas_transferidas > 0,
+      (pupas_colectadas / larvas_transferidas) * 100,
+      NA_real_
+    ),
+    .groups = "drop"
+  )
+pupae_recovery
+```
+
+## Diagnóstico: lotes problemáticos
+
+Los lotes con pupas colectadas pero sin transferencia registrada representan inconsistencias digitales o errores de carga de datos, y son descartados del análisis.
+
+```{r diagnostico-lotes}
+lotes_sin_transferencia <- pupae_recovery %>%
+  filter(larvas_transferidas == 0, pupas_colectadas > 0)
+
+message("Lotes con pupas pero larvas_transferidas = 0 (revisar registro):")
+print(lotes_sin_transferencia)
+message("Lotes con Pupae_Recovery NA: ", sum(is.na(pupae_recovery$Pupae_Recovery)))
+```
+
+## Depuración final del dataset
+
+Se eliminan los lotes con Pupae Recovery (%) igual a NA, con larvas = 0 y pupas > 0 (registros inconsistentes), y aquellos con PR > 100% (biológicamente imposibles, que indican errores de registro o mezcla de lotes).
+
+```{r depuracion}
+pupae_recovery <- pupae_recovery %>%
+  filter(!is.na(Pupae_Recovery))
+
+datos_diatraea <- datos_diatraea %>%
+  filter(!(Lote_produccion %in% lotes_sin_transferencia$Lote_produccion)) %>%
+  filter(!(Lote_produccion %in% pupae_recovery$Lote_produccion[pupae_recovery$Pupae_Recovery > 100]))
+
+lotes_evaluados <- datos_diatraea %>%
+  group_by(Lote_produccion) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  nrow()
+
+message("Número de lotes de producción evaluados: ", lotes_evaluados)
+```
+
+---
+
+# Estadísticas descriptivas por actividad
+
+Las siguientes estadísticas resumen el rendimiento promedio de la colonia para cada etapa del ciclo de cría de *D. saccharalis*. Estas métricas son los puntapié para la estimación del tamaño efectivo de población.
+
+```{r resumen-actividades}
+resumen_diatraea <- bind_rows(
+  datos_diatraea %>%
+    filter(Actividad == "Lavado y número de huevos") %>%
+    summarise(Variable = "Huevos Lavados",
+              Media = mean(Cantidad, na.rm = TRUE),
+              Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+              N = sum(!is.na(Cantidad))),
+  datos_diatraea %>%
+    filter(Actividad == "Inoculación") %>%
+    summarise(Variable = "Huevos Inoculados",
+              Media = mean(Cantidad, na.rm = TRUE),
+              Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+              N = sum(!is.na(Cantidad))),
+  datos_diatraea %>%
+    filter(Actividad == "Viabilidad de huevos") %>%
+    summarise(Variable = "Viabilidad de huevos (%)",
+              Media = mean(Cantidad, na.rm = TRUE),
+              Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+              N = sum(!is.na(Cantidad))),
+  datos_diatraea %>%
+    filter(Actividad == "Transferencia") %>%
+    summarise(Variable = "Larvas Transferidas",
+              Media = mean(Cantidad, na.rm = TRUE),
+              Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+              N = sum(!is.na(Cantidad))),
+  datos_diatraea %>%
+    filter(Actividad == "Colecta de pupas") %>%
+    summarise(Variable = "Pupas Colectadas",
+              Media = mean(Cantidad, na.rm = TRUE),
+              Desvio_estandar = sd(Cantidad, na.rm = TRUE),
+              N = sum(!is.na(Cantidad)))
+)
+
+kable(resumen_diatraea, digits = 2,
+      col.names = c("Variable", "Media", "Desvío estándar", "N"),
+      caption    = "Tabla 1. Estadísticas descriptivas por actividad del ciclo de cría de D. saccharalis (2024-2026)")
+```
+
+---
+
+# Estimación del Tamaño Efectivo de Población (Ne)
+
+## Estimación del número de adultos emergidos
+
+La transición de pupa a adulto es la última etapa antes de la reproducción y representa el cuello de botella más relevante para estimar el Ne. En ausencia de datos directos de emergencia adulta por lote, se aplica un factor de emergencia promedio del 60%, derivado de estudios previos de biología del ciclo de vida de *D. saccharalis* en condiciones de insectario (Informe Biología de Lepidópteros, 2019). Este valor refleja las pérdidas acumuladas por mortalidad pupal, deformidades y falta de emergencia.
+
+$$N_{adultos} = N_{pupas} \times 0.60$$
+
+```{r adultos-por-lote}
+adultos_por_lote <- datos_diatraea %>%
+  filter(Actividad == "Colecta de pupas") %>%
+  group_by(Lote_produccion) %>%
+  summarise(
+    N_adultos = sum(Cantidad, na.rm = TRUE) * 0.6,
+    .groups   = "drop"
+  )
+adultos_por_lote
+```
+
+## Construcción de tabla ancha por lote de producción
+
+Se pivota el dataset para obtener una fila por lote con todas las variables de interés como columnas, incluyendo el Pupae Recovery y los adultos emergidos estimados.
+
+```{r tabla-ancha}
+datos_diatraea <- datos_diatraea %>%
+  filter(!Actividad %in% c("Armado de jaulas", "Cambio de jaulas"))
+
+datos_diatraea_transpose <- datos_diatraea %>%
+  select(Lote_produccion, Actividad, Cantidad) %>%
+  group_by(Lote_produccion, Actividad) %>%
+  summarise(Cantidad = sum(Cantidad, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = Actividad, values_from = Cantidad) %>%
+  mutate(
+    `Pupae Recovery` = if_else(
+      !is.na(Transferencia) & Transferencia > 0 & !is.na(`Colecta de pupas`),
+      (`Colecta de pupas` / Transferencia) * 100,
+      NA_real_
+    ),
+    `Adultos emergidos` = if_else(
+      !is.na(`Colecta de pupas`),
+      `Colecta de pupas` * 0.60,
+      NA_real_
+    )
+  )
+datos_diatraea_transpose
+```
+
+## Fórmula del Ne con sex ratio equitativo
+
+Bajo el supuesto de una proporción sexual 1:1 (sex ratio equitativo), el tamaño efectivo de población se calcula con la fórmula de Wright (1931):
+
+$$N_e = \frac{4 \cdot N_f \cdot N_m}{N_f + N_m}$$
+
+donde $N_f$ y $N_m$ son el número de hembras y machos reproductores, respectivamente. Cuando $N_f = N_m = N_{adultos}/2$, esta expresión se simplifica a:
+
+$$N_e = N_{adultos}$$
+
+La fórmula completa se retiene porque en estudios futuros con datos de sex ratio observado, los valores de $N_f$ y $N_m$ podrían diferir, afectando significativamente la estimación de Ne.
+
+```{r calculo-ne}
+datos_diatraea_transpose <- datos_diatraea_transpose %>%
+  mutate(
+    N_hembras = `Adultos emergidos` / 2,
+    N_machos  = `Adultos emergidos` / 2,
+    Ne = if_else(
+      !is.na(N_hembras) & !is.na(N_machos) & (N_hembras + N_machos) > 0,
+      (4 * N_hembras * N_machos) / (N_hembras + N_machos),
+      NA_real_
+    )
+  )
+```
+
+## Resumen de Ne y variables asociadas
+
+```{r resumen-ne}
+resumen_diatraea_transpose <- datos_diatraea_transpose %>%
+  summarise(
+    across(
+      c(Transferencia, `Colecta de pupas`, `Pupae Recovery`,
+        `Adultos emergidos`, N_hembras, N_machos, Ne),
+      list(Media = ~mean(.x, na.rm = TRUE), DE = ~sd(.x, na.rm = TRUE)),
+      .names = "{.col}_{.fn}"
+    )
+  )
+
+kable(resumen_diatraea_transpose, digits = 2,
+      col.names = c(
+        "Transf. Media", "Transf. DE",
+        "Pupas Media",   "Pupas DE",
+        "PR Media",      "PR DE",
+        "Adultos Media", "Adultos DE",
+        "Nf Media",      "Nf DE",
+        "Nm Media",      "Nm DE",
+        "Ne Media",      "Ne DE"
+      ),
+      caption = "Tabla 2. Estadísticas de Ne y variables del ciclo de cría por lote de producción")
+```
+
+## Media armónica del Ne entre lotes
+
+La **media armónica** es el estimador apropiado del Ne efectivo de la colonia a lo largo de múltiples lotes (generaciones parciales), porque pondera más fuertemente los lotes con Ne bajo. Desde el punto de vista de la genética de poblaciones, un solo lote con Ne muy reducido puede tener un impacto desproporcionado sobre la diversidad genética acumulada, efecto que la media aritmética subestima.
+
+$$\bar{N}_{e,arm} = \frac{k}{\sum_{i=1}^{k} \frac{1}{N_{e,i}}}$$
+
+```{r ne-armonico}
+datos_diatraea_transpose <- datos_diatraea_transpose %>%
+  left_join(
+    datos_diatraea %>% select(Lote_produccion, year) %>% distinct(),
+    by = "Lote_produccion"
+  )
+
+ne_harm <- datos_diatraea_transpose %>%
+  filter(!is.na(Ne), Ne > 0) %>%
+  { nrow(.) / sum(1 / .$Ne) }
+
+message("Media armónica del Ne entre lotes: ", round(ne_harm, 2))
+```
+
+---
+
+# Análisis gráfico
+
+## Relación entre larvas transferidas y pupas colectadas
+
+La correlación entre larvas transferidas y pupas colectadas refleja la **eficiencia de la fase larval**: una pendiente cercana a la esperada por el Pupae Recovery promedio indica estabilidad en el protocolo de cría; desviaciones sistemáticas sugieren cambios en la calidad del sustrato o la densidad larval por bandeja.
+
+```{r plot-larvas-pupas}
+p1 <- ggplot(datos_diatraea_transpose, aes(x = Transferencia, y = `Colecta de pupas`)) +
+  geom_point(color = "#2c7fb8", size = 2.5, alpha = 0.8) +
+  geom_smooth(method = "lm", se = TRUE, color = "#d73027") +
+  stat_regline_equation(aes(label = after_stat(eq.label)),
+                        label.x.npc = "left", label.y.npc = "top") +
+  stat_cor(aes(label = after_stat(rr.label)),
+           label.x.npc = "left", label.y.npc = 0.88) +
+  labs(title = "Larvas transferidas vs. Pupas colectadas",
+       x     = "Larvas transferidas",
+       y     = "Pupas colectadas") +
+  theme_minimal(base_size = 12)
+p1
+```
+
+## Relación entre pupas colectadas y adultos emergidos
+
+Por construcción (factor de emergencia = 0.60), esta relación es completamente lineal. No obstante, el gráfico permite verificar la consistencia de los datos y detectar lotes atípicos (outliers) que podrían indicar mortalidad pupal inusualmente alta o baja.
+
+```{r plot-pupas-adultos}
+p2 <- ggplot(datos_diatraea_transpose, aes(x = `Colecta de pupas`, y = `Adultos emergidos`)) +
+  geom_point(color = "#1a9850", size = 2.5, alpha = 0.8) +
+  geom_smooth(method = "lm", se = TRUE, color = "#d73027") +
+  stat_regline_equation(aes(label = after_stat(eq.label)),
+                        label.x.npc = "left", label.y.npc = "top") +
+  stat_cor(aes(label = after_stat(rr.label)),
+           label.x.npc = "left", label.y.npc = 0.88) +
+  labs(title = "Pupas colectadas vs. Adultos emergidos",
+       x     = "Pupas colectadas",
+       y     = "Adultos emergidos") +
+  theme_minimal(base_size = 12)
+p2
+```
+
+## Distribución del Pupae Recovery (%)
+
+La distribución del PR es un indicador de la homogeneidad del proceso de cría. Una distribución unimodal y simétrica indica condiciones de producción estables; una distribución asimétrica hacia la izquierda o multimodal puede señalar variabilidad estacional, lotes contaminados o cambios en el protocolo de cría.
+
+```{r plot-pupae-recovery}
+p3 <- ggplot(datos_diatraea_transpose, aes(x = `Pupae Recovery`)) +
+  geom_histogram(bins = 20, fill = "#74add1", color = "white", alpha = 0.9) +
+  geom_vline(
+    xintercept = mean(datos_diatraea_transpose$`Pupae Recovery`, na.rm = TRUE),
+    linetype = "dashed", color = "#d73027", linewidth = 1
+  ) +
+  labs(title = "Distribución de Pupae Recovery (%)",
+       x     = "Pupae Recovery (%)",
+       y     = "Frecuencia") +
+  theme_minimal(base_size = 12)
+p3
+```
+
+## Distribución de la viabilidad de huevos (%)
+
+La viabilidad de huevos es el primer indicador de la calidad reproductiva de los adultos de la generación parental. Valores consistentemente bajos pueden reflejar endogamia acumulada, deficiencias nutricionales en los adultos, o condiciones subóptimas de appareamiento en las jaulas.
+
+```{r plot-viabilidad-huevos}
+p4 <- datos_diatraea %>%
+  filter(Actividad == "Viabilidad de huevos") %>%
+  ggplot(aes(x = Cantidad)) +
+  geom_histogram(bins = 20, fill = "#fdae61", color = "white", alpha = 0.9) +
+  geom_vline(
+    xintercept = mean(
+      datos_diatraea$Cantidad[datos_diatraea$Actividad == "Viabilidad de huevos"],
+      na.rm = TRUE
+    ),
+    linetype = "dashed", color = "#d73027", linewidth = 1
+  ) +
+  labs(title = "Distribución de Viabilidad de huevos (%)",
+       x     = "Viabilidad (%)",
+       y     = "Frecuencia") +
+  theme_minimal(base_size = 12)
+p4
+```
+
+## Distribución comparativa de variables clave
+
+```{r plot-boxplots}
+p6 <- datos_diatraea_transpose %>%
+  select(Lote_produccion, Transferencia, `Colecta de pupas`, `Adultos emergidos`) %>%
+  tidyr::pivot_longer(-Lote_produccion, names_to = "Variable", values_to = "Valor") %>%
+  ggplot(aes(x = Variable, y = Valor, fill = Variable)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.5) +
+  scale_fill_manual(values = c("#2c7fb8", "#1a9850", "#fdae61")) +
+  labs(title = "Distribución de variables clave entre lotes de producción",
+       x     = NULL,
+       y     = "Cantidad") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position   = "none",
+        axis.text.x       = element_text(angle = 20, hjust = 1))
+p6
+```
+
+## Reducción del tamaño poblacional a lo largo del ciclo de cría
+
+El siguiente gráfico de barras representa el tamaño poblacional promedio en cada etapa del ciclo de cría (Transferencia → Pupas → Adultos emergidos → Ne estimado), evidenciando el efecto de cuello de botella acumulado desde las larvas hasta la generación adulta reproductora. La línea punteada corresponde a la media armónica del Ne entre lotes, que es el valor de referencia más conservador para la gestión genética de la colonia.
+
+```{r plot-ne-ciclo}
+ne_promedio <- resumen_diatraea_transpose %>%
+  summarise(
+    Transferencia       = `Transferencia_Media`,
+    `Colecta de pupas`  = `Colecta de pupas_Media`,
+    `Adultos emergidos` = `Adultos emergidos_Media`,
+    Ne                  = `Ne_Media`
+  ) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Ne")
+
+grafico_ne <- ggplot(ne_promedio, aes(x = Variable, y = Ne, fill = Variable)) +
+  geom_col(alpha = 0.8) +
+  geom_text(aes(label = round(Ne, 1)), vjust = -0.5, size = 3.5) +
+  geom_hline(yintercept = ne_harm, linetype = "dashed",
+             color = "#d73027", linewidth = 1) +
+  annotate("text", x = Inf, y = ne_harm,
+           label  = paste0("Ne arm. = ", round(ne_harm, 1)),
+           hjust  = 1.1, vjust = -0.4, color = "#d73027", size = 3.5) +
+  labs(title = "Reducción del tamaño poblacional a través del ciclo de cría de D. saccharalis",
+       x     = "Etapa del ciclo",
+       y     = "Tamaño promedio") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none",
+        axis.text.x     = element_text(angle = 20, hjust = 1))
+grafico_ne
+```
+
+## Reducción poblacional incluyendo la fase de huevo
+
+Para una representación más completa del cuello de botella, se incluyen también los huevos lavados, los huevos inoculados y las larvas eclosionadas estimadas, que tienen órdenes de magnitud muy superiores a los adultos reproductores. Esto pone en perspectiva la intensidad de la selección y la reducción de Ne a lo largo de todo el ciclo.
+
+```{r plot-ne-ciclo-completo}
+Huevos_Lavados_Media <- resumen_diatraea %>%
+  filter(Variable == "Huevos Lavados") %>%
+  pull(Media)
+
+Huevos_Inoculados_Media <- resumen_diatraea %>%
+  filter(Variable == "Huevos Inoculados") %>%
+  pull(Media)
+
+larvas_eclosionadas_media <- datos_diatraea_transpose %>%
+  mutate(
+    larvas_eclosionadas = Transferencia * (`Viabilidad de huevos` / 100)
+  ) %>%
+  summarise(larvas_eclosionadas_media = mean(larvas_eclosionadas, na.rm = TRUE)) %>%
+  pull(larvas_eclosionadas_media)
+
+ne_promedio_completo <- tibble(
+  Variable = c("Huevos Lavados", "Huevos Inoculados",
+               "Larvas Eclosionadas", "Larvas Transferidas",
+               "Pupas Colectadas", "Adultos Emergidos", "Ne"),
+  Ne = c(
+    Huevos_Lavados_Media,
+    Huevos_Inoculados_Media,
+    larvas_eclosionadas_media,
+    resumen_diatraea_transpose$`Transferencia_Media`,
+    resumen_diatraea_transpose$`Colecta de pupas_Media`,
+    resumen_diatraea_transpose$`Adultos emergidos_Media`,
+    resumen_diatraea_transpose$`Ne_Media`
+  )
+)
+
+grafico_ne_completo <- ggplot(
+  ne_promedio_completo,
+  aes(x = factor(Variable, levels = Variable), y = Ne, fill = Variable)
+) +
+  geom_col(alpha = 0.8) +
+  geom_text(aes(label = round(Ne, 0)), vjust = -0.5, size = 3) +
+  geom_hline(yintercept = ne_harm, linetype = "dashed",
+             color = "#d73027", linewidth = 1) +
+  annotate("text", x = Inf, y = ne_harm,
+           label  = paste0("Ne arm. = ", round(ne_harm, 1)),
+           hjust  = 1.1, vjust = -0.4, color = "#d73027", size = 3.5) +
+  labs(
+    title = "Reducción del tamaño poblacional a lo largo del ciclo completo de cría",
+    x     = "Etapa del ciclo",
+    y     = "Tamaño promedio"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none",
+        axis.text.x     = element_text(angle = 30, hjust = 1))
+
+grafico_ne_completo
+```
+
+---
+
+# Determinación del tamaño de muestra para monitoreo de la colonia
+
+## Fundamento estadístico
+
+Para establecer un protocolo de monitoreo periódico de las variables de producción, es necesario determinar el número mínimo de lotes a evaluar para detectar desviaciones significativas respecto a los valores de referencia con una precisión prefijada. La fórmula general para estimar el tamaño de muestra $n$ bajo muestreo aleatorio simple es:
+
+$$n = \frac{z^2 \cdot \sigma^2}{e^2}$$
+
+donde $z$ es el valor crítico de la distribución normal estándar para el nivel de confianza deseado, $\sigma$ es la desviación estándar poblacional estimada a partir de los datos históricos, y $e$ es el error de estimación máximo tolerado (en las mismas unidades que $\sigma$).
+
+```{r funciones-n-muestral}
+n_muestral    <- function(sd, error, z_score = 1.96)  ceiling((z_score^2 * sd^2) / error^2)
+n_muestral_93 <- function(sd, error, z_score = 1.81)  ceiling((z_score^2 * sd^2) / error^2)
+n_muestral_90 <- function(sd, error, z_score = 1.645) ceiling((z_score^2 * sd^2) / error^2)
+n_muestral_85 <- function(sd, error, z_score = 1.44)  ceiling((z_score^2 * sd^2) / error^2)
+```
+
+```{r calculo-n-muestral}
+sd_viabilidad  <- resumen_diatraea %>% filter(Variable == "Viabilidad de huevos (%)") %>% pull(Desvio_estandar)
+sd_transferencia <- resumen_diatraea %>% filter(Variable == "Larvas Transferidas")       %>% pull(Desvio_estandar)
+sd_pupas        <- resumen_diatraea %>% filter(Variable == "Pupas Colectadas")           %>% pull(Desvio_estandar)
+sd_adultos      <- resumen_diatraea_transpose %>% pull(`Adultos emergidos_DE`)
+
+tamanos_muestra <- tibble(
+  Variable = c("Viabilidad de huevos (%)", "Larvas Transferidas",
+               "Pupas Colectadas", "Adultos emergidos"),
+  SD    = c(sd_viabilidad, sd_transferencia, sd_pupas, sd_adultos),
+  Error = c(7, 5, 5, 5),
+  `95% IC` = c(
+    n_muestral(sd_viabilidad,   error = 7),
+    n_muestral(sd_transferencia, error = 5),
+    n_muestral(sd_pupas,         error = 5),
+    n_muestral(sd_adultos,       error = 5)
+  ),
+  `93% IC` = c(
+    n_muestral_93(sd_viabilidad,   error = 7),
+    n_muestral_93(sd_transferencia, error = 5),
+    n_muestral_93(sd_pupas,         error = 5),
+    n_muestral_93(sd_adultos,       error = 5)
+  ),
+  `90% IC` = c(
+    NA,
+    n_muestral_90(sd_transferencia, error = 10),
+    NA,
+    NA
+  )
+)
+
+kable(tamanos_muestra, digits = 2,
+      col.names = c("Variable", "Desvío estándar", "Error (%)",
+                    "n (95% IC)", "n (93% IC)", "n (90% IC)"),
+      caption   = "Tabla 3. Tamaño de muestra mínimo recomendado para el monitoreo de la colonia de D. saccharalis")
+```
+
+---
+
+# Proyección de endogamia acumulada
+
+## Modelo de incremento de endogamia
+
+En una colonia cerrada con Ne constante, el coeficiente de endogamia $F$ (probabilidad de que dos alelos en un individuo sean idénticos por descendencia) aumenta de forma acumulativa a través de las generaciones. El modelo estándar es:
+
+$$F_t = 1 - \left(1 - \frac{1}{2 N_e}\right)^t$$
+
+donde $t$ es el número de generaciones transcurridas. Este modelo predice que, incluso con Ne moderados, la endogamia se acumula significativamente a lo largo de múltiples generaciones, con efectos deletéreos sobre la viabilidad de la colonia.
+
+Una regla práctica comúnmente adoptada en programas de cría de insectos para control biológico es mantener $F < 0.10$ (10%) para evitar la depresión por endogamia. Superar este umbral suele asociarse con reducción en la fecundidad, aumento de anomalías morfológicas y disminución de la competitividad de los individuos como agentes de control biológico.
+
+```{r endogamia}
+endogamia_esperada <- function(Ne, t) {
+  1 - (1 - 1 / (2 * Ne))^t
+}
+
+message(sprintf(
+  "Con Ne armónica = %.1f, endogamia esperada tras 10 generaciones: %.4f (%.2f%%)",
+  ne_harm,
+  endogamia_esperada(ne_harm, 10),
+  endogamia_esperada(ne_harm, 10) * 100
+))
+```
+
+## Tabla de endogamia proyectada
+
+La siguiente tabla proyecta la endogamia acumulada para distintos valores hipotéticos de Ne y diferentes horizontes temporales (número de generaciones). Esto permite evaluar escenarios de manejo: ¿cuántas generaciones pueden mantenerse con un Ne dado antes de alcanzar el umbral de F = 0.10?
+
+```{r tabla-endogamia}
+ne_values   <- c(10, 20, 50, 100, 200, round(ne_harm))
+generations <- c(1, 5, 10, 20, 50)
+
+endogamia_table <- expand.grid(Ne = ne_values, Generaciones = generations) %>%
+  mutate(
+    F_endogamia = endogamia_esperada(Ne, Generaciones),
+    `F (%)` = round(F_endogamia * 100, 2),
+    Alerta  = if_else(F_endogamia >= 0.10, "⚠ > 10%", "OK")
+  ) %>%
+  select(Ne, Generaciones, `F (%)`, Alerta)
+
+kable(endogamia_table,
+      caption = "Tabla 4. Endogamia acumulada proyectada (%) para distintos valores de Ne y número de generaciones. Se marca con alerta los escenarios que superan el umbral crítico del 10%.")
+```
+
+## Visualización de la curva de endogamia
+
+```{r plot-endogamia}
+endogamia_plot_data <- expand.grid(
+  Ne          = c(ne_harm, 50, 100, 200, 500),
+  Generaciones = 1:50
+) %>%
+  mutate(
+    F_endogamia = endogamia_esperada(Ne, Generaciones),
+    Ne_label    = paste0("Ne = ", round(Ne))
+  )
+
+ggplot(endogamia_plot_data,
+       aes(x = Generaciones, y = F_endogamia * 100,
+           color = factor(round(Ne)), group = factor(round(Ne)))) +
+  geom_line(linewidth = 1) +
+  geom_hline(yintercept = 10, linetype = "dashed",
+             color = "#d73027", linewidth = 0.8) +
+  annotate("text", x = 50, y = 10,
+           label = "Umbral crítico (F = 10%)",
+           hjust = 1, vjust = -0.5, color = "#d73027", size = 3.5) +
+  scale_color_brewer(palette = "Dark2", name = "Ne") +
+  labs(
+    title = "Proyección de endogamia acumulada según Ne",
+    x     = "Número de generaciones",
+    y     = "Coeficiente de endogamia F (%)"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+---
+
+# Conclusiones
+
+1. **Ne estimado de la colonia**: La media armónica del Ne entre lotes es de **`r round(ne_harm, 1)` individuos**, calculada sobre los adultos emergidos estimados con un factor de emergencia del 60%.
+
+2. **Cuello de botella principal**: La mayor reducción en tamaño poblacional ocurre en la transición larva → pupa → adulto, donde el Pupae Recovery y la tasa de emergencia determinan el Ne final disponible para la reproducción.
+
+3. **Proyección de endogamia**: Con el Ne estimado, la endogamia esperada a los 10 ciclos de cría es de aproximadamente **`r round(endogamia_esperada(ne_harm, 10) * 100, 2)`%**. Si este valor supera el 10%, se recomienda revisar el protocolo de cría e incorporar individuos de campo para renovar la variabilidad genética de la colonia.
+
+4. **Monitoreo recomendado**: Según los tamaños de muestra calculados, se recomienda evaluar un mínimo de **`r n_muestral(sd_adultos, error = 5)` lotes** por ciclo de monitoreo para estimar el número de adultos emergidos con un error máximo del 5% (IC 95%).
+
+5. **Acciones de manejo**: Para mantener la viabilidad genética de la colonia a largo plazo, se recomienda (a) maximizar el Ne aumentando el número de parejas reproductoras por jaula, (b) rotar material genético con otras colonias o con individuos silvestres cada cierto número de generaciones, y (c) registrar sistemáticamente la tasa de emergencia adulta para refinar la estimación de Ne.
+
+---
+
+# Información de sesión
+
+```{r session-info}
+sessionInfo()
+```
