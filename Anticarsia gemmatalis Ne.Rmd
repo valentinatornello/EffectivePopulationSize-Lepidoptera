@@ -1,5 +1,5 @@
 ---
-title: "Tamaño Efectivo de Población (*Diatraea saccharalis*) en la colonia del Insectario de Argentina"
+title: "Tamaño Efectivo de Población (*Anticarsia gemmatalis*) en la colonia del Insectario de Argentina"
 author: "Valentina Tornello, Carla Serre"
 date: "`r Sys.Date()`"
 output:
@@ -26,7 +26,7 @@ knitr::opts_chunk$set(
 
 # Introducción
 
-*Diatraea saccharalis* (Fabricius, 1794) (Lepidoptera: Crambidae), conocida comúnmente como el barrenador del tallo del maíz y la caña de azúcar, es una de las plagas lepidópteras de mayor impacto económico en América Latina. Su control biológico mediante agentes como *Cotesia flavipes* y *Trichogramma* spp. depende de la disponibilidad continua de individuos criados en insectario, lo que exige mantener colonias de laboratorio con alta vitalidad y diversidad genética.
+*Anticarsia gemmatalis* (Lepidoptera: Erebidae), conocida comúnmente como oruga de las leguminosas u oruga militar tardía, es una de las principales plagas defoliadoras del cultivo de soja en Sudamérica. Su cría masiva en insectario es indispensable para los ensayos de eficacia y de monitoreo de resistencia.
 
 ## Tamaño Efectivo de Población (Ne) en colonias de insectario
 
@@ -68,23 +68,69 @@ head(data)
 
 # Filtrado y preparación de datos
 
-## Selección de registros de *D. saccharalis*
+## Selección de registros de *A. gemmatalis*
 
-Se retienen únicamente los registros correspondientes a la especie *D. saccharalis* en la etapa de **Cría**, a partir del 1 de enero de 2024. Se crean variables auxiliares de año (`year`) y semana ISO (`week`) para análisis temporales posteriores.
+Se retienen únicamente los registros correspondientes a la especie *A. gemmatalis* en la etapa de **Cría**, a partir del 1 de enero de 2024. Se crean variables auxiliares de año (`year`) y semana ISO (`week`) para análisis temporales posteriores. Existen actualmente dos poblaciones en el insectario cuyo nombre indica su proveniencia: Capdevila y Gualeguaychú. Nuestra hipótesis es que la población de Gualeguaychú actualmente presenta muchos baches y no la consideramos referente para realizar el análisis pues es probable que presente mayor endocría. Por esta razón, haremos un análisis exploratorio inicial de cada población para luego definir con cuáles datos queremos continuar el análisis y ver si es posible tomar todos los datos juntos o es necesario elegir una de las dos poblaciones.
 
-```{r filtrado-especie}
-datos_diatraea <- data |>
+```{r exploratorio-poblaciones}
+anticarsia_todas <- data |>
   rename(Lote_produccion = `Lote de Produccion`) |>
+  # la columna Etapa tiene variantes de tipeo ("cria", "cría", "Cría")
   filter(
-    Especie == "D. saccharalis",
-    Etapa   == "Cría",
-    Fecha   >= as.Date("2024-01-01")
+    str_detect(Especie, "^A\\. gemmatalis"),
+    str_to_lower(str_trim(Etapa)) == "cría" | str_to_lower(str_trim(Etapa)) == "cria",
+    Fecha >= as.Date("2024-01-01")
   ) |>
   mutate(
     year = year(Fecha),
-    week = isoweek(Fecha)
+    week = isoweek(Fecha),
+    Poblacion = case_when(
+      str_detect(Especie, "Capdevila")   ~ "Capdevila",
+      str_detect(Especie, "Gualeguaychú") ~ "Gualeguaychú",
+      TRUE                                ~ "Sin identificar"
+    )
   )
-datos_diatraea
+
+exploratorio_poblaciones <- anticarsia_todas %>%
+  group_by(Poblacion) %>%
+  summarise(
+    Registros       = n(),
+    Lotes           = n_distinct(Lote_produccion),
+    Primer_registro = min(Fecha, na.rm = TRUE),
+    Ultimo_registro = max(Fecha, na.rm = TRUE),
+    Semanas_activas = n_distinct(paste(year, week)),
+    .groups = "drop"
+  )
+
+kable(exploratorio_poblaciones,
+      col.names = c("Población", "Registros", "Lotes", "Primer registro",
+                    "Último registro", "Semanas con actividad"),
+      caption = "Comparación exploratoria de las dos poblaciones de A. gemmatalis")
+```
+
+```{r exploratorio-continuidad, fig.height=3.5}
+anticarsia_todas %>%
+  count(Poblacion, year, week) %>%
+  mutate(fecha_aprox = as.Date(paste(year, week, 1, sep = "-"), format = "%Y-%U-%u")) %>%
+  ggplot(aes(x = fecha_aprox, y = n, color = Poblacion)) +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 1.2) +
+  scale_color_manual(values = c("Capdevila" = "#2c7fb8", "Gualeguaychú" = "#d73027",
+                                "Sin identificar" = "#999999")) +
+  labs(title = "Continuidad temporal de registros por población",
+       x = "Fecha (semana ISO)", y = "Registros por semana", color = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+La población de Gualeguaychú presenta una serie temporal discontinua (con baches entre lotes), mientras que Capdevila muestra actividad sostenida. Por ello el análisis de Ne se realiza sobre la población **Capdevila**.
+
+```{r filtrado-especie}
+datos_anticarsia <- anticarsia_todas |>
+  filter(Poblacion == "Capdevila")
+
+datos_anticarsia
+
 ```
 
 ## Conversión y limpieza de tipos
@@ -92,7 +138,7 @@ datos_diatraea
 Se asegura que `Cantidad` sea numérica y se eliminan espacios residuales en la columna `Actividad`, lo cual es esencial para que los filtros y agrupaciones posteriores funcionen correctamente.
 
 ```{r conversion-tipos}
-datos_diatraea <- datos_diatraea %>%
+datos_anticarsia <- datos_anticarsia %>%
   mutate(
     Cantidad         = as.numeric(Cantidad),
     Actividad        = trimws(Actividad),
@@ -105,7 +151,7 @@ datos_diatraea <- datos_diatraea %>%
 Se eliminan filas con `NA` en `Cantidad` o `Actividad`, que corresponden a registros incompletos o pendientes en el sistema de seguimiento.
 
 ```{r limpieza-na}
-datos_diatraea <- datos_diatraea %>%
+datos_anticarsia <- datos_anticarsia %>%
   filter(!is.na(Cantidad), !is.na(Actividad))
 ```
 
@@ -114,7 +160,7 @@ datos_diatraea <- datos_diatraea %>%
 El siguiente gráfico muestra el porcentaje de registros con `NA` para cada actividad antes de la limpieza, permitiendo identificar etapas del ciclo con mayor frecuencia de datos faltantes.
 
 ```{r qc-plot}
-qc_plot <- datos_diatraea %>%
+qc_plot <- datos_anticarsia %>%
   group_by(Actividad) %>%
   summarise(
     total     = n(),
@@ -139,7 +185,7 @@ El **Pupae Recovery** (o tasa de recuperación de pupas) es la proporción de la
 $$PR = \frac{N_{pupas\,colectadas}}{N_{larvas\,transferidas}} \times 100$$
 
 ```{r pupae-recovery}
-pupae_recovery <- datos_diatraea %>%
+pupae_recovery <- datos_anticarsia %>%
   filter(Actividad %in% c("Transferencia", "Colecta de pupas")) %>%
   group_by(Lote_produccion) %>%
   summarise(
@@ -176,11 +222,11 @@ Se eliminan los lotes con Pupae Recovery (%) igual a NA, con larvas = 0 y pupas 
 pupae_recovery <- pupae_recovery %>%
   filter(!is.na(Pupae_Recovery))
 
-datos_diatraea <- datos_diatraea %>%
+datos_anticarsia <- datos_anticarsia %>%
   filter(!(Lote_produccion %in% lotes_sin_transferencia$Lote_produccion)) %>%
   filter(!(Lote_produccion %in% pupae_recovery$Lote_produccion[pupae_recovery$Pupae_Recovery > 100]))
 
-lotes_evaluados <- datos_diatraea %>%
+lotes_evaluados <- datos_anticarsia %>%
   group_by(Lote_produccion) %>%
   summarise(n = n(), .groups = "drop") %>%
   nrow()
@@ -192,35 +238,35 @@ message("Número de lotes de producción evaluados: ", lotes_evaluados)
 
 # Estadísticas descriptivas por actividad
 
-Las siguientes estadísticas resumen el rendimiento promedio de la colonia para cada etapa del ciclo de cría de *D. saccharalis*. Estas métricas son los puntapié para la estimación del tamaño efectivo de población.
+Las siguientes estadísticas resumen el rendimiento promedio de la colonia para cada etapa del ciclo de cría de *A. gemmatalis*. Estas métricas son los puntapié para la estimación del tamaño efectivo de población.
 
 ```{r resumen-actividades}
-resumen_diatraea <- bind_rows(
-  datos_diatraea %>%
+resumen_anticarsia <- bind_rows(
+  datos_anticarsia %>%
     filter(Actividad == "Lavado y número de huevos") %>%
     summarise(Variable = "Huevos Lavados",
               Media = mean(Cantidad, na.rm = TRUE),
               Desvio_estandar = sd(Cantidad, na.rm = TRUE),
               N = sum(!is.na(Cantidad))),
-  datos_diatraea %>%
+  datos_anticarsia %>%
     filter(Actividad == "Inoculación") %>%
     summarise(Variable = "Huevos Inoculados",
               Media = mean(Cantidad, na.rm = TRUE),
               Desvio_estandar = sd(Cantidad, na.rm = TRUE),
               N = sum(!is.na(Cantidad))),
-  datos_diatraea %>%
+  datos_anticarsia %>%
     filter(Actividad == "Viabilidad de huevos") %>%
     summarise(Variable = "Viabilidad de huevos (%)",
               Media = mean(Cantidad, na.rm = TRUE),
               Desvio_estandar = sd(Cantidad, na.rm = TRUE),
               N = sum(!is.na(Cantidad))),
-  datos_diatraea %>%
+  datos_anticarsia %>%
     filter(Actividad == "Transferencia") %>%
     summarise(Variable = "Larvas Transferidas",
               Media = mean(Cantidad, na.rm = TRUE),
               Desvio_estandar = sd(Cantidad, na.rm = TRUE),
               N = sum(!is.na(Cantidad))),
-  datos_diatraea %>%
+  datos_anticarsia %>%
     filter(Actividad == "Colecta de pupas") %>%
     summarise(Variable = "Pupas Colectadas",
               Media = mean(Cantidad, na.rm = TRUE),
@@ -228,9 +274,9 @@ resumen_diatraea <- bind_rows(
               N = sum(!is.na(Cantidad)))
 )
 
-kable(resumen_diatraea, digits = 2,
+kable(resumen_anticarsia, digits = 2,
       col.names = c("Variable", "Media", "Desvío estándar", "N"),
-      caption    = "Tabla 1. Estadísticas descriptivas por actividad del ciclo de cría de D. saccharalis (2024-2026)")
+      caption    = "Tabla 1. Estadísticas descriptivas por actividad del ciclo de cría de A. gemmatalis (2024-2026)")
 ```
 
 ---
@@ -239,12 +285,12 @@ kable(resumen_diatraea, digits = 2,
 
 ## Estimación del número de adultos emergidos
 
-La transición de pupa a adulto es la última etapa antes de la reproducción y representa el cuello de botella más relevante para estimar el Ne. En ausencia de datos directos de emergencia adulta por lote, se aplica un factor de emergencia promedio del 60%, derivado de estudios previos de biología del ciclo de vida de *D. saccharalis* en condiciones de insectario (Informe Biología de Lepidópteros, 2019). Este valor refleja las pérdidas acumuladas por mortalidad pupal, deformidades y falta de emergencia.
+La transición de pupa a adulto es la última etapa antes de la reproducción y representa el cuello de botella más relevante para estimar el Ne. En ausencia de datos directos de emergencia adulta por lote, se aplica un factor de emergencia promedio del 60%, derivado de estudios previos de biología del ciclo de vida de *A. gemmatalis* en condiciones de insectario (Informe Biología de Lepidópteros, 2019). Este valor refleja las pérdidas acumuladas por mortalidad pupal, deformidades y falta de emergencia.
 
 $$N_{adultos} = N_{pupas} \times 0.60$$
 
 ```{r adultos-por-lote}
-adultos_por_lote <- datos_diatraea %>%
+adultos_por_lote <- datos_anticarsia %>%
   filter(Actividad == "Colecta de pupas") %>%
   group_by(Lote_produccion) %>%
   summarise(
@@ -259,10 +305,10 @@ adultos_por_lote
 Se pivota el dataset para obtener una fila por lote con todas las variables de interés como columnas, incluyendo el Pupae Recovery y los adultos emergidos estimados.
 
 ```{r tabla-ancha}
-datos_diatraea <- datos_diatraea %>%
+datos_anticarsia <- datos_anticarsia %>%
   filter(!Actividad %in% c("Armado de jaulas", "Cambio de jaulas"))
 
-datos_diatraea_transpose <- datos_diatraea %>%
+datos_anticarsia_transpose <- datos_anticarsia %>%
   select(Lote_produccion, Actividad, Cantidad) %>%
   group_by(Lote_produccion, Actividad) %>%
   summarise(Cantidad = sum(Cantidad, na.rm = TRUE), .groups = "drop") %>%
@@ -279,7 +325,7 @@ datos_diatraea_transpose <- datos_diatraea %>%
       NA_real_
     )
   )
-datos_diatraea_transpose
+datos_anticarsia_transpose
 ```
 
 ## Fórmula del Ne con sex ratio equitativo
@@ -295,7 +341,7 @@ $$N_e = N_{adultos}$$
 La fórmula completa se retiene porque en estudios futuros con datos de sex ratio observado, los valores de $N_f$ y $N_m$ podrían diferir, afectando significativamente la estimación de Ne.
 
 ```{r calculo-ne}
-datos_diatraea_transpose <- datos_diatraea_transpose %>%
+datos_anticarsia_transpose <- datos_anticarsia_transpose %>%
   mutate(
     N_hembras = `Adultos emergidos` / 2,
     N_machos  = `Adultos emergidos` / 2,
@@ -310,7 +356,7 @@ datos_diatraea_transpose <- datos_diatraea_transpose %>%
 ## Resumen de Ne y variables asociadas
 
 ```{r resumen-ne}
-resumen_diatraea_transpose <- datos_diatraea_transpose %>%
+resumen_anticarsia_transpose <- datos_anticarsia_transpose %>%
   summarise(
     across(
       c(Transferencia, `Colecta de pupas`, `Pupae Recovery`,
@@ -320,7 +366,7 @@ resumen_diatraea_transpose <- datos_diatraea_transpose %>%
     )
   )
 
-kable(resumen_diatraea_transpose, digits = 2,
+kable(resumen_anticarsia_transpose, digits = 2,
       col.names = c(
         "Transf. Media", "Transf. DE",
         "Pupas Media",   "Pupas DE",
@@ -340,13 +386,13 @@ La **media armónica** es el estimador apropiado del Ne efectivo de la colonia a
 $$\bar{N}_{e,arm} = \frac{k}{\sum_{i=1}^{k} \frac{1}{N_{e,i}}}$$
 
 ```{r ne-armonico}
-datos_diatraea_transpose <- datos_diatraea_transpose %>%
+datos_anticarsia_transpose <- datos_anticarsia_transpose %>%
   left_join(
-    datos_diatraea %>% select(Lote_produccion, year) %>% distinct(),
+    datos_anticarsia %>% select(Lote_produccion, year) %>% distinct(),
     by = "Lote_produccion"
   )
 
-ne_harm <- datos_diatraea_transpose %>%
+ne_harm <- datos_anticarsia_transpose %>%
   filter(!is.na(Ne), Ne > 0) %>%
   { nrow(.) / sum(1 / .$Ne) }
 
@@ -362,7 +408,7 @@ message("Media armónica del Ne entre lotes: ", round(ne_harm, 2))
 La correlación entre larvas transferidas y pupas colectadas refleja la **eficiencia de la fase larval**: una pendiente cercana a la esperada por el Pupae Recovery promedio indica estabilidad en el protocolo de cría; desviaciones sistemáticas sugieren cambios en la calidad del sustrato o la densidad larval por bandeja.
 
 ```{r plot-larvas-pupas}
-p1 <- ggplot(datos_diatraea_transpose, aes(x = Transferencia, y = `Colecta de pupas`)) +
+p1 <- ggplot(datos_anticarsia_transpose, aes(x = Transferencia, y = `Colecta de pupas`)) +
   geom_point(color = "#2c7fb8", size = 2.5, alpha = 0.8) +
   geom_smooth(method = "lm", se = TRUE, color = "#d73027") +
   stat_regline_equation(aes(label = after_stat(eq.label)),
@@ -381,7 +427,7 @@ p1
 Por construcción (factor de emergencia = 0.60), esta relación es completamente lineal. No obstante, el gráfico permite verificar la consistencia de los datos y detectar lotes atípicos (outliers) que podrían indicar mortalidad pupal inusualmente alta o baja.
 
 ```{r plot-pupas-adultos}
-p2 <- ggplot(datos_diatraea_transpose, aes(x = `Colecta de pupas`, y = `Adultos emergidos`)) +
+p2 <- ggplot(datos_anticarsia_transpose, aes(x = `Colecta de pupas`, y = `Adultos emergidos`)) +
   geom_point(color = "#1a9850", size = 2.5, alpha = 0.8) +
   geom_smooth(method = "lm", se = TRUE, color = "#d73027") +
   stat_regline_equation(aes(label = after_stat(eq.label)),
@@ -400,10 +446,10 @@ p2
 La distribución del PR es un indicador de la homogeneidad del proceso de cría. Una distribución unimodal y simétrica indica condiciones de producción estables; una distribución asimétrica hacia la izquierda o multimodal puede señalar variabilidad estacional, lotes contaminados o cambios en el protocolo de cría.
 
 ```{r plot-pupae-recovery}
-p3 <- ggplot(datos_diatraea_transpose, aes(x = `Pupae Recovery`)) +
+p3 <- ggplot(datos_anticarsia_transpose, aes(x = `Pupae Recovery`)) +
   geom_histogram(bins = 20, fill = "#74add1", color = "white", alpha = 0.9) +
   geom_vline(
-    xintercept = mean(datos_diatraea_transpose$`Pupae Recovery`, na.rm = TRUE),
+    xintercept = mean(datos_anticarsia_transpose$`Pupae Recovery`, na.rm = TRUE),
     linetype = "dashed", color = "#d73027", linewidth = 1
   ) +
   labs(title = "Distribución de Pupae Recovery (%)",
@@ -418,13 +464,13 @@ p3
 La viabilidad de huevos es el primer indicador de la calidad reproductiva de los adultos de la generación parental. Valores consistentemente bajos pueden reflejar endogamia acumulada, deficiencias nutricionales en los adultos, o condiciones subóptimas de appareamiento en las jaulas.
 
 ```{r plot-viabilidad-huevos}
-p4 <- datos_diatraea %>%
+p4 <- datos_anticarsia %>%
   filter(Actividad == "Viabilidad de huevos") %>%
   ggplot(aes(x = Cantidad)) +
   geom_histogram(bins = 20, fill = "#fdae61", color = "white", alpha = 0.9) +
   geom_vline(
     xintercept = mean(
-      datos_diatraea$Cantidad[datos_diatraea$Actividad == "Viabilidad de huevos"],
+      datos_anticarsia$Cantidad[datos_anticarsia$Actividad == "Viabilidad de huevos"],
       na.rm = TRUE
     ),
     linetype = "dashed", color = "#d73027", linewidth = 1
@@ -439,7 +485,7 @@ p4
 ## Distribución comparativa de variables clave
 
 ```{r plot-boxplots}
-p6 <- datos_diatraea_transpose %>%
+p6 <- datos_anticarsia_transpose %>%
   select(Lote_produccion, Transferencia, `Colecta de pupas`, `Adultos emergidos`) %>%
   tidyr::pivot_longer(-Lote_produccion, names_to = "Variable", values_to = "Valor") %>%
   ggplot(aes(x = Variable, y = Valor, fill = Variable)) +
@@ -459,7 +505,7 @@ p6
 El siguiente gráfico de barras representa el tamaño poblacional promedio en cada etapa del ciclo de cría (Transferencia → Pupas → Adultos emergidos → Ne estimado), evidenciando el efecto de cuello de botella acumulado desde las larvas hasta la generación adulta reproductora. La línea punteada corresponde a la media armónica del Ne entre lotes, que es el valor de referencia más conservador para la gestión genética de la colonia.
 
 ```{r plot-ne-ciclo}
-ne_promedio <- resumen_diatraea_transpose %>%
+ne_promedio <- resumen_anticarsia_transpose %>%
   summarise(
     Transferencia       = `Transferencia_Media`,
     `Colecta de pupas`  = `Colecta de pupas_Media`,
@@ -476,7 +522,7 @@ grafico_ne <- ggplot(ne_promedio, aes(x = Variable, y = Ne, fill = Variable)) +
   annotate("text", x = Inf, y = ne_harm,
            label  = paste0("Ne arm. = ", round(ne_harm, 1)),
            hjust  = 1.1, vjust = -0.4, color = "#d73027", size = 3.5) +
-  labs(title = "Reducción del tamaño poblacional a través del ciclo de cría de D. saccharalis",
+  labs(title = "Reducción del tamaño poblacional a través del ciclo de cría de A. gemmatalis",
        x     = "Etapa del ciclo",
        y     = "Tamaño promedio") +
   theme_minimal(base_size = 12) +
@@ -492,15 +538,15 @@ grafico_ne
 Para una representación más completa del cuello de botella, se incluyen también los huevos lavados, los huevos inoculados y las larvas eclosionadas estimadas, que tienen órdenes de magnitud muy superiores a los adultos reproductores. Esto pone en perspectiva la intensidad de la selección y la reducción de Ne a lo largo de todo el ciclo.
 
 ```{r plot-ne-ciclo-completo, fig.height=5.5}
-Huevos_Lavados_Media <- resumen_diatraea %>%
+Huevos_Lavados_Media <- resumen_anticarsia %>%
   filter(Variable == "Huevos Lavados") %>%
   pull(Media)
 
-Huevos_Inoculados_Media <- resumen_diatraea %>%
+Huevos_Inoculados_Media <- resumen_anticarsia %>%
   filter(Variable == "Huevos Inoculados") %>%
   pull(Media)
 
-larvas_eclosionadas_media <- datos_diatraea_transpose %>%
+larvas_eclosionadas_media <- datos_anticarsia_transpose %>%
   mutate(
     larvas_eclosionadas = Transferencia * (`Viabilidad de huevos` / 100)
   ) %>%
@@ -515,10 +561,10 @@ ne_promedio_completo <- tibble(
     Huevos_Lavados_Media,
     Huevos_Inoculados_Media,
     larvas_eclosionadas_media,
-    resumen_diatraea_transpose$`Transferencia_Media`,
-    resumen_diatraea_transpose$`Colecta de pupas_Media`,
-    resumen_diatraea_transpose$`Adultos emergidos_Media`,
-    resumen_diatraea_transpose$`Ne_Media`
+    resumen_anticarsia_transpose$`Transferencia_Media`,
+    resumen_anticarsia_transpose$`Colecta de pupas_Media`,
+    resumen_anticarsia_transpose$`Adultos emergidos_Media`,
+    resumen_anticarsia_transpose$`Ne_Media`
   )
 )
 
@@ -567,10 +613,10 @@ n_muestral_85 <- function(sd, error, z_score = 1.44)  ceiling((z_score^2 * sd^2)
 ```
 
 ```{r calculo-n-muestral}
-sd_viabilidad  <- resumen_diatraea %>% filter(Variable == "Viabilidad de huevos (%)") %>% pull(Desvio_estandar)
-sd_transferencia <- resumen_diatraea %>% filter(Variable == "Larvas Transferidas")       %>% pull(Desvio_estandar)
-sd_pupas        <- resumen_diatraea %>% filter(Variable == "Pupas Colectadas")           %>% pull(Desvio_estandar)
-sd_adultos      <- resumen_diatraea_transpose %>% pull(`Adultos emergidos_DE`)
+sd_viabilidad  <- resumen_anticarsia %>% filter(Variable == "Viabilidad de huevos (%)") %>% pull(Desvio_estandar)
+sd_transferencia <- resumen_anticarsia %>% filter(Variable == "Larvas Transferidas")       %>% pull(Desvio_estandar)
+sd_pupas        <- resumen_anticarsia %>% filter(Variable == "Pupas Colectadas")           %>% pull(Desvio_estandar)
+sd_adultos      <- resumen_anticarsia_transpose %>% pull(`Adultos emergidos_DE`)
 
 tamanos_muestra <- tibble(
   Variable = c("Viabilidad de huevos (%)", "Larvas Transferidas",
@@ -600,7 +646,7 @@ tamanos_muestra <- tibble(
 kable(tamanos_muestra, digits = 2,
       col.names = c("Variable", "Desvío estándar", "Error (%)",
                     "n (95% IC)", "n (93% IC)", "n (90% IC)"),
-      caption   = "Tabla 3. Tamaño de muestra mínimo recomendado para el monitoreo de la colonia de D. saccharalis")
+      caption   = "Tabla 3. Tamaño de muestra mínimo recomendado para el monitoreo de la colonia de A. gemmatalis")
 ```
 
 ---
@@ -712,7 +758,7 @@ kable(franklin_table,
 
 ## Generación crítica con el Ne actual
 
-A partir del Ne armónico calculado de los datos de producción, se estima la generación en la cual la colonia alcanzaría el umbral crítico de endogamia (F = 10%), asumiendo 6 generaciones anuales de *D. saccharalis* en condiciones de insectario.
+A partir del Ne armónico calculado de los datos de producción, se estima la generación en la cual la colonia alcanzaría el umbral crítico de endogamia (F = 10%), asumiendo 6 generaciones anuales de *A. gemmatalis* en condiciones de insectario.
 
 ```{r ne-critico}
 gen_por_año <- 6
@@ -739,7 +785,7 @@ Ne_para_t <- function(t, F_max = 0.10) {
   ceiling(-1 / (2 * ((1 - F_max)^(1/t) - 1)))
 }
 
-PR_media        <- resumen_diatraea_transpose$`Pupae Recovery_Media` / 100
+PR_media        <- resumen_anticarsia_transpose$`Pupae Recovery_Media` / 100
 tasa_emergencia <- 0.60
 
 horizontes <- tibble(

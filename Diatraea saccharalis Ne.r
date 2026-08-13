@@ -10,14 +10,16 @@ library(readxl)
 library(dplyr)
 library(knitr)
 library(ggplot2)
-install.packages("tinytex")
+library(ggpubr)
+library(knitr)
+library(tinytex)
+library(pandoc)
 # Read new data: Progreso de Actividades Insectario from 2024
 # Read original data: Cria de Lep from 2022
 #data <- read_excel("LepidopteranData-2024-7-2026.xlsx")
 data <- read_excel("CriadeLep-7-2026.xlsx")
 
 head(data)
-rmarkdown::render("Diatraea saccharalis Ne.Rmd")
 # Rename columns and filter for Diatraea saccharalis in the "Cría" stage.
     # The "Status" column is used to filter out pending activities,
     # and new columns for year and week are created.
@@ -41,8 +43,6 @@ datos_diatraea <- datos_diatraea %>%
     Actividad = trimws(Actividad),
     Lote_produccion = as.numeric(Lote_produccion)
   )
-  library(knitr)
-  rmarkdown::render("Diatraea saccharalis Ne.Rmd")
 
 # Clean data by removing rows with NA in 'Cantidad' and 'Activity'
 # and filter out any rows where Viabilidad de huevos or Pupae Recovery are <0 and > 100
@@ -386,7 +386,8 @@ p2
 # 3) Distribución de Pupae Recovery (%)
 p3 <- ggplot(datos_diatraea_transpose, aes(x = `Pupae Recovery`)) +
   geom_histogram(bins = 20, fill = "#74add1", color = "white", alpha = 0.9) +
-  geom_vline(xintercept = mean(datos_diatraea_transpose$`Pupae Recovery`, na.rm = TRUE),
+  geom_vline(xintercept = mean(datos_diatraea_transpose$`Pupae Recovery`, 
+  na.rm = TRUE),
              linetype = "dashed", color = "#d73027", linewidth = 1) +
   labs(title = "Distribución de Pupae Recovery (%)",
        x = "Pupae Recovery (%)", y = "Frecuencia") +
@@ -464,11 +465,10 @@ Huevos_Lavados_Media <- resumen_diatraea %>%
   #Calculamos el número de larvas eclosionadas según el porcentaje de viabilidad de huevos por lote de producción, luego la media
   larvas_eclosionadas <- datos_diatraea_transpose %>%
     mutate(
-      larvas_eclosionadas = Transferencia * (`Viabilidad de huevos (%)` / 100)
+      larvas_eclosionadas = Transferencia * (`Viabilidad de huevos` / 100)
     ) %>%
     summarise(larvas_eclosionadas_media = mean(larvas_eclosionadas, na.rm = TRUE)) %>%
     pull(larvas_eclosionadas_media)
-
 # Gráfico de barras de cada variable con su Ne promedio y la media armónica superpuesta
 ne_promedio <- resumen_diatraea_transpose %>%
   summarise(
@@ -527,5 +527,103 @@ endogamia_table <- expand.grid(Ne = ne_values, Generations = generations) %>%
 
 endogamia_table
 
-tinytex::install_tinytex()
+ne_values   <- c(10, 20, 50, 100, 200, round(ne_harm))
+generations <- c(1, 5, 10, 20, 50)
+
+endogamia_table <- expand.grid(Ne = ne_values, Generaciones = generations) %>%
+  mutate(
+    F_endogamia = endogamia_esperada(Ne, Generaciones),
+    `F (%)` = round(F_endogamia * 100, 2),
+    Alerta  = if_else(F_endogamia >= 0.10, "(!)", "OK")
+  ) %>%
+  select(Ne, Generaciones, `F (%)`, Alerta)
+
+kable(endogamia_table,
+      caption = "Tabla 4. Endogamia acumulada proyectada (%) para distintos valores de Ne y número de generaciones. Se marca con alerta los escenarios que superan el umbral crítico del 10%.")
+
+endogamia_plot_data <- expand.grid(
+  Ne          = c(ne_harm, 50, 100, 200, 500, 700, 1000),
+  Generaciones = 1:50
+) %>%
+  mutate(
+    F_endogamia = endogamia_esperada(Ne, Generaciones),
+    Ne_label    = paste0("Ne = ", round(Ne))
+  )
+
+ggplot(endogamia_plot_data,
+       aes(x = Generaciones, y = F_endogamia * 100,
+           color = factor(round(Ne)), group = factor(round(Ne)))) +
+  geom_line(linewidth = 1) +
+  geom_hline(yintercept = 10, linetype = "dashed",
+             color = "#d73027", linewidth = 0.8) +
+  annotate("text", x = 50, y = 10,
+           label = "Umbral crítico (F = 10%)",
+           hjust = 1, vjust = -0.5, color = "#d73027", size = 3.5) +
+  scale_color_brewer(palette = "Dark2", name = "Ne") +
+  labs(
+    title = "Proyección de endogamia acumulada de Diatraea saccharalis según Ne",
+    x     = "Número de generaciones",
+    y     = "Coeficiente de endogamia F (%)"
+  ) +
+  theme_minimal(base_size = 12)
+
+franklin_table <- tibble(
+  Criterio = c(
+    "Corto plazo — Franklin (1980)",
+    "Largo plazo — Franklin (1980)",
+    "Conservador — Frankham et al. (2014)",
+    "Ne actual colonia (media armonica)"
+  ),
+  Ne_ref = c(50, 500, 1000, round(ne_harm)),
+  Cumple = c(
+    if_else(round(ne_harm) >= 50,   "Si", "No"),
+    if_else(round(ne_harm) >= 500,  "Si", "No"),
+    if_else(round(ne_harm) >= 1000, "Si", "No"),
+    "—"
+  )
+)
+
+kable(franklin_table,
+      col.names = c("Criterio", "Ne de referencia", "Colonia actual"),
+      caption   = "Tabla 5. Ne actual vs. umbrales de referencia en genetica de conservacion.")
+      gen_por_año <- 6
+
+t_critico     <- log(1 - 0.10) / log(1 - 1 / (2 * ne_harm))
+años_criticos <- t_critico / gen_por_año
+
+message(sprintf(
+  "Ne actual = %.0f: umbral F = 10%% alcanzado en generacion %.0f (aprox. %.1f anios).",
+  round(ne_harm), floor(t_critico), años_criticos
+
+  ne_objetivo_data <- tibble(
+  Criterio = c(
+    paste0("Ne actual\n(", round(ne_harm), ")"),
+    "Franklin\ncorto plazo\n(Ne = 50)",
+    "Franklin\nlargo plazo\n(Ne = 500)",
+    "Frankham et al.\n2014\n(Ne = 1000)"
+  ),
+  Ne   = c(round(ne_harm), 50, 500, 1000),
+  Tipo = c("actual", "referencia", "referencia", "referencia")
+)
+
+ggplot(ne_objetivo_data, aes(x = Criterio, y = Ne, fill = Tipo)) +
+  geom_col(alpha = 0.85, width = 0.6) +
+  geom_text(aes(label = round(Ne)), vjust = -0.4, size = 3.5) +
+  scale_fill_manual(
+    values = c("actual" = "#2c7fb8", "referencia" = "#fdae61"),
+    labels = c("actual" = "Ne colonia", "referencia" = "Umbral de referencia"),
+    name   = NULL
+  ) +
+  labs(
+    title = "Ne actual de la Diatraea saccharalis vs. umbrales de referencia (Franklin 1980)",
+    x     = NULL,
+    y     = "Tamanio efectivo de poblacion (Ne)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x     = element_text(size = 8.5, lineheight = 0.85),
+    legend.position = "bottom"
+  )
+))
+
 rmarkdown::render("Diatraea saccharalis Ne.Rmd")
