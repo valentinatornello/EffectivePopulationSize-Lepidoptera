@@ -132,6 +132,44 @@ kable(qc_plot, digits = 2,
 
 # Cálculo del *Pupae Recovery*
 
+## Parámetros operativos actuales
+
+El manejo actual de *D. saccharalis* utiliza **3 larvas por placa** y **300 placas por transferencia**, equivalentes a **900 larvas por transferencia**. Con tres transferencias semanales, el objetivo operativo es de **2.700 larvas por semana**. Estos valores describen el protocolo vigente y no deben imputarse retrospectivamente a todos los lotes históricos.
+
+Se observó que trabajar con **1 larva por placa** aumenta el Pupae Recovery. Sin embargo, los datos analizados en este informe corresponden al esquema de **3 larvas por placa**, por lo que la comparación con 1 larva por placa no modifica el cálculo histórico presentado. En el futuro se está evaluando una **cría masal de larvas** en otro ensayo; sus resultados deberán analizarse por separado antes de incorporarlos como referencia para este proceso.
+
+En la etapa adulta se colocan aproximadamente **600 pupas en una jaula grande** durante algunos días para el nacimiento. Luego, los adultos se transfieren a jaulas chicas de **60 adultos**, donde se concentra la reproducción operativa. La jaula grande se interpreta como una **instancia de emergencia** y no como la unidad reproductiva final del cálculo de Ne.
+
+```{r parametros-operativos}
+larvas_por_placa_actual <- 3
+placas_por_transferencia_actual <- 300
+larvas_por_transferencia_actual <- larvas_por_placa_actual *
+  placas_por_transferencia_actual
+transferencias_por_semana_actual <- 3
+target_larvas_semanal_actual <- larvas_por_transferencia_actual *
+  transferencias_por_semana_actual
+pupas_jaula_grande_actual <- 600
+adultos_jaula_chica_actual <- 60
+
+parametros_operativos <- tibble(
+  Parametro = c("Larvas por placa", "Placas por transferencia",
+                "Larvas por transferencia", "Transferencias por semana",
+                "Target semanal de larvas", "Pupas en jaula grande",
+                "Adultos por jaula chica"),
+  Valor = c(larvas_por_placa_actual,
+            placas_por_transferencia_actual,
+            larvas_por_transferencia_actual,
+            transferencias_por_semana_actual,
+            target_larvas_semanal_actual,
+            pupas_jaula_grande_actual,
+            adultos_jaula_chica_actual)
+)
+kable(parametros_operativos,
+      caption = "Parámetros operativos actuales de D. saccharalis")
+```
+
+**Cómo leer la tabla de parámetros operativos:** los primeros tres valores describen cómo se construye cada transferencia (`3 larvas/placa × 300 placas = 900 larvas`); el target semanal se obtiene multiplicando las 900 larvas por las tres transferencias semanales. Los valores de 600 pupas y 60 adultos describen etapas distintas: la jaula grande es de emergencia y la jaula chica es la unidad reproductiva operativa.
+
 ## Fundamento biológico
 
 El **Pupae Recovery** (o tasa de recuperación de pupas) es la proporción de larvas transferidas al sustrato de cría que alcanzan exitosamente el estado de pupa. Esta métrica integra la mortalidad larval por causas bióticas (canibalismo, patógenos del sustrato, hongos entomopatógenos) y abióticas (condiciones de temperatura y humedad, calidad del sustrato). Valores por debajo del umbral esperado para la especie pueden indicar deterioro en la calidad del sustrato, contaminación fúngica o bacterial, o señales de depresión por endogamia a nivel larvario.
@@ -233,6 +271,8 @@ kable(resumen_diatraea, digits = 2,
       caption    = "Tabla 1. Estadísticas descriptivas por actividad del ciclo de cría de D. saccharalis (2024-2026)")
 ```
 
+**Cómo leer la Tabla 1:** `Media` resume el valor promedio observado para cada actividad, `Desvío estándar` muestra cuánto varían los lotes alrededor de ese promedio y `N` indica cuántos registros contribuyen al cálculo. La tabla describe el desempeño productivo histórico; no representa por sí sola el número de adultos reproductores ni el Ne genético.
+
 ---
 
 # Estimación del Tamaño Efectivo de Población (Ne)
@@ -294,6 +334,36 @@ $$N_e = N_{adultos}$$
 
 La fórmula completa se retiene porque en estudios futuros con datos de sex ratio observado, los valores de $N_f$ y $N_m$ podrían diferir, afectando significativamente la estimación de Ne.
 
+### Alcance de la estimación y mejora propuesta
+
+El valor presentado en este informe debe interpretarse como una **estimación demográfica de línea de base**. Se construye a partir de registros productivos muy variables, centrados en la cría y en las actividades registradas por lote, y convierte las pupas en adultos mediante una tasa promedio de emergencia. Por lo tanto, es una herramienta útil para describir cuellos de botella y variabilidad del proceso, pero no pretende reemplazar una medición directa de los reproductores.
+
+La estimación del Ne reproductivo podrá refinarse cuando se registre, por lote o unidad reproductiva, el número real de **hembras y machos adultos vivos** que participan en la reproducción. Con esos datos se aplicará directamente la fórmula de Wright:
+
+$$N_e = \frac{4 \cdot N_f \cdot N_m}{N_f + N_m}$$
+
+Este paso no invalida el análisis actual: lo convierte en una primera capa de monitoreo productivo sobre la cual puede incorporarse una medición genética y reproductiva más precisa. En consecuencia, el Ne informado debe leerse como un valor orientativo para detectar variación y priorizar el registro futuro de adultos por sexo.
+
+```{r registro-reproductivo}
+registro_reproductivo_recomendado <- tibble(
+  Campo = c("Jaula chica", "Fecha/tiempo", "Hembras adultas vivas",
+    "Machos adultos vivos", "Adultos muertos", "Huevos producidos",
+    "Huevos viables", "Pupae Recovery del lote"),
+  Uso = c("Identifica la unidad reproductiva operativa",
+      "Permite seguir cambios durante la reproducción",
+      "Componente Nf de la fórmula de Wright",
+      "Componente Nm de la fórmula de Wright",
+      "Alerta de pérdida de reproductores",
+      "Medida de producción reproductiva",
+      "Proxy del aporte genético efectivo",
+      "Vincula el resultado reproductivo con la fase larva-pupa")
+)
+kable(registro_reproductivo_recomendado,
+  caption = "Tabla 3. Campos mínimos para refinar el Ne reproductivo de D. saccharalis")
+```
+
+**Cómo leer la Tabla 3:** cada fila define un dato que debería registrarse para la jaula chica de 60 adultos. Las hembras y los machos vivos permiten reemplazar el supuesto de proporción sexual 1:1 en la fórmula de Ne; los huevos viables y la fecha permiten evaluar si la contribución reproductiva se mantiene durante el tiempo. La jaula grande con 600 pupas se registra como etapa de emergencia y no como unidad reproductiva.
+
 ```{r calculo-ne}
 datos_diatraea_transpose <- datos_diatraea_transpose %>%
   mutate(
@@ -333,6 +403,8 @@ kable(resumen_diatraea_transpose, digits = 2,
       caption = "Tabla 2. Estadísticas de Ne y variables del ciclo de cría por lote de producción")
 ```
 
+    **Cómo leer la Tabla 2:** cada columna `Media` es el promedio por lote y cada columna `DE` es su variabilidad. `Pupae Recovery` mide la transición larva-pupa; `Adultos emergidos` es una estimación basada en una emergencia promedio del 60%; `Nf` y `Nm` se obtienen suponiendo una proporción sexual 1:1. Por eso, el `Ne` de esta tabla es una línea de base demográfica y deberá refinarse con conteos reales de hembras y machos adultos.
+
 ## Media armónica del Ne entre lotes
 
 La **media armónica** es el estimador apropiado del Ne efectivo de la colonia a lo largo de múltiples lotes (generaciones parciales), porque pondera más fuertemente los lotes con Ne bajo. Desde el punto de vista de la genética de poblaciones, un solo lote con Ne muy reducido puede tener un impacto desproporcionado sobre la diversidad genética acumulada, efecto que la media aritmética subestima.
@@ -352,6 +424,8 @@ ne_harm <- datos_diatraea_transpose %>%
 
 message("Media armónica del Ne entre lotes: ", round(ne_harm, 2))
 ```
+
+La media armónica resume el efecto acumulativo de los lotes, dando mayor peso a los lotes con menor Ne. No debe leerse como el número de adultos alojados en una jaula: es un indicador orientativo de la contribución demográfica bajo los supuestos del análisis.
 
 ---
 
@@ -600,8 +674,10 @@ tamanos_muestra <- tibble(
 kable(tamanos_muestra, digits = 2,
       col.names = c("Variable", "Desvío estándar", "Error (%)",
                     "n (95% IC)", "n (93% IC)", "n (90% IC)"),
-      caption   = "Tabla 3. Tamaño de muestra mínimo recomendado para el monitoreo de la colonia de D. saccharalis")
+      caption   = "Tabla 4. Tamaño de muestra mínimo recomendado para el monitoreo de la colonia de D. saccharalis")
 ```
+
+**Cómo leer la Tabla 4:** `SD` resume la variabilidad histórica de cada variable y las columnas de intervalo de confianza indican cuántos lotes deberían monitorearse para estimar esa variable con el error indicado. Este `n` es un tamaño de muestra estadístico; no es el Ne ni el número de adultos reproductores necesarios.
 
 ---
 
@@ -647,8 +723,10 @@ endogamia_table <- expand.grid(Ne = ne_values, Generaciones = generations) %>%
   select(Ne, Generaciones, `F (%)`, Alerta)
 
 kable(endogamia_table,
-      caption = "Tabla 4. Endogamia acumulada proyectada (%) para distintos valores de Ne y número de generaciones. Se marca con alerta los escenarios que superan el umbral crítico del 10%.")
+      caption = "Tabla 5. Endogamia acumulada proyectada (%) para distintos valores de Ne y número de generaciones. Se marca con alerta los escenarios que superan el umbral crítico del 10%.")
 ```
+
+**Cómo leer la Tabla 5:** cada fila combina un valor hipotético de Ne con un número de generaciones. `F (%)` es la endogamia acumulada proyectada bajo el modelo de colonia cerrada; `Alerta` marca los casos en que F alcanza o supera 10%. Es una proyección de escenarios, no una medición directa de endogamia en la colonia.
 
 ## Visualización de la curva de endogamia
 
@@ -707,8 +785,10 @@ franklin_table <- tibble(
 
 kable(franklin_table,
       col.names = c("Criterio", "Ne de referencia", "Colonia actual"),
-      caption   = "Tabla 5. Ne actual vs. umbrales de referencia en genetica de conservacion.")
+      caption   = "Tabla 6. Ne actual vs. umbrales de referencia en genetica de conservacion.")
 ```
+
+**Cómo leer la Tabla 6:** se compara el Ne armónico estimado de la colonia con referencias de corto plazo, largo plazo y criterio conservador. `Cumple` indica únicamente si el valor de Ne alcanza cada referencia; no evalúa por sí solo la calidad productiva ni confirma el número real de hembras y machos reproductores.
 
 ## Generación crítica con el Ne actual
 
@@ -759,8 +839,10 @@ kable(horizontes,
         "Ne minimo (F<10%)", "Ne actual",
         "Larvas/lote necesarias", "Estado"
       ),
-      caption = "Tabla 6. Ne minimo para distintos horizontes y su equivalente en larvas transferidas por lote, calculado con los datos de produccion de la colonia.")
+      caption = "Tabla 7. Ne minimo para distintos horizontes y su equivalente en larvas transferidas por lote, calculado con los datos de produccion de la colonia.")
 ```
+
+    **Cómo leer la Tabla 7:** `Ne mínimo` es el valor requerido para mantener F < 10% durante el horizonte indicado; `Larvas/lote necesarias` traduce ese objetivo usando el Pupae Recovery y la emergencia promedio. `Estado` compara Ne actual con Ne mínimo, no larvas actuales con larvas necesarias. Para la operación vigente, una transferencia equivale a **900 larvas** (3 larvas por placa × 300 placas) y el target semanal es **2.700 larvas** (900 × 3 transferencias); esa comparación operativa debe hacerse por separado del Ne armónico histórico.
 
 ## Ne actual vs. umbrales de referencia
 
@@ -800,17 +882,19 @@ ggplot(ne_objetivo_data, aes(x = Criterio, y = Ne, fill = Tipo)) +
 
 # Conclusiones
 
-1. **Ne estimado de la colonia**: La media armónica del Ne entre lotes es de **`r round(ne_harm, 1)` individuos**, calculada sobre los adultos emergidos estimados con un factor de emergencia del 60%.
+1. **Esquema operativo actual**: La colonia trabaja con **3 larvas por placa**, 300 placas por transferencia y 3 transferencias semanales. Esto equivale a **900 larvas por transferencia** y un target de **2.700 larvas semanales**. Este es el esquema que debe utilizarse para interpretar los resultados productivos de este informe.
 
-2. **Cuello de botella principal**: La mayor reducción en tamaño poblacional ocurre en la transición larva → pupa → adulto, donde el Pupae Recovery y la tasa de emergencia determinan el Ne final disponible para la reproducción.
+2. **Resultado de densidad larval**: Se observó que 1 larva por placa aumenta el Pupae Recovery. Sin embargo, los datos históricos analizados corresponden a 3 larvas por placa; por lo tanto, el resultado de 1 larva debe considerarse una alternativa experimental y no mezclarse con la línea de base actual. La evaluación futura de una cría masal de larvas se realizará en otro ensayo y podrá aportar una comparación adicional cuando se disponga de sus resultados.
 
-3. **Proyección de endogamia**: Con el Ne estimado, la endogamia esperada a los 10 ciclos de cría es de aproximadamente **`r round(endogamia_esperada(ne_harm, 10) * 100, 2)`%**. El umbral crítico de F = 10% se alcanzaría en la generación **`r floor(t_critico)`** (~`r round(años_criticos, 1)` años a `r gen_por_año` generaciones/año), sin renovación genética externa.
+3. **Emergencia y reproducción son etapas diferentes**: Las aproximadamente 600 pupas se mantienen algunos días en una jaula grande para el nacimiento. Luego, los adultos pasan a jaulas chicas de 60 adultos, donde se concentra la reproducción operativa. En consecuencia, la jaula grande representa una instancia de emergencia y no debe interpretarse como la unidad reproductiva final ni como el Ne de la colonia.
 
-4. **Ne objetivo vs. producción actual**: Para cumplir el umbral de largo plazo (Ne $\geq$ 500) durante al menos 10 años, se requieren transferir aproximadamente **`r ceiling(Ne_para_t(10 * gen_por_año) / tasa_emergencia / PR_media)` larvas por lote**. El Ne actual (`r round(ne_harm)`) `r if_else(round(ne_harm) >= 500, "cumple", "no cumple aún")` el criterio de Franklin a largo plazo.
+4. **Ne estimado de la colonia**: La media armónica del Ne entre lotes es de **`r round(ne_harm, 1)` individuos**, calculada sobre adultos emergidos estimados con un factor de emergencia del 60%. Este valor constituye una línea de base demográfica construida a partir de datos productivos variables. Es útil para describir cuellos de botella y orientar el monitoreo, pero deberá refinarse con el número real de hembras y machos adultos vivos que participan en la reproducción en las jaulas chicas.
 
-5. **Monitoreo recomendado**: Según los tamaños de muestra calculados, se recomienda evaluar un mínimo de **`r n_muestral(sd_adultos, error = 5)` lotes** por ciclo de monitoreo para estimar el número de adultos emergidos con un error máximo del 5% (IC 95%).
+5. **Cuello de botella y proyección**: La mayor reducción ocurre en la transición larva → pupa → adulto, donde el Pupae Recovery y la tasa de emergencia determinan los adultos disponibles. La endogamia esperada a los 10 ciclos de cría es de aproximadamente **`r round(endogamia_esperada(ne_harm, 10) * 100, 2)`%**, bajo los supuestos del modelo y sin renovación genética externa.
 
-6. **Acciones de manejo**: Para mantener la viabilidad genética de la colonia a largo plazo, se recomienda (a) maximizar el Ne aumentando el número de parejas reproductoras por jaula, (b) incorporar individuos de campo o de otras colonias antes de alcanzar la generación crítica (`r floor(t_critico)`), y (c) registrar sistemáticamente la tasa de emergencia adulta para refinar la estimación de Ne.
+6. **Monitoreo recomendado**: Según los tamaños de muestra calculados, se recomienda evaluar un mínimo de **`r n_muestral(sd_adultos, error = 5)` lotes** por ciclo para estimar adultos emergidos con un error máximo del 5% (IC 95%). Como mejora, se debe registrar el número de hembras y machos adultos vivos por jaula chica y por momento de reproducción; esos datos permitirán calcular el Ne reproductivo observado y reemplazar gradualmente el supuesto de proporción sexual 1:1.
+
+7. **Acciones de manejo**: Mantener separado el registro de emergencia en jaula grande del registro reproductivo en jaulas chicas, sostener el seguimiento del esquema de 2.700 larvas semanales, comparar formalmente 1 versus 3 larvas por placa y analizar por separado la futura cría masal. Para decisiones genéticas, priorizar el número y la contribución efectiva de hembras y machos adultos, no solo el volumen de larvas, pupas o adultos trasladados.
 
 ---
 

@@ -199,8 +199,10 @@ datos_diatraea_transpose <- datos_diatraea %>%
   )
 datos_diatraea_transpose
 
-# Suponiendo que el sex ratio es 1:1, podemos estimar Ne con un estimado N hembras y N machos
-# Creamos columna N hembras, y N machos, y luego Ne = 4*Nf*Nm/(Nf+Nm)
+# Esta es una estimación demográfica de línea de base basada en datos productivos
+# variables. El Ne reproductivo se refinará cuando se registren adultos por sexo.
+# Mientras tanto, se mantiene el supuesto operativo de una proporción sexual 1:1.
+# Con Nf y Nm observados, Ne = 4*Nf*Nm/(Nf+Nm).
 datos_diatraea_transpose <- datos_diatraea_transpose %>%
   mutate(
     N_hembras = `Adultos emergidos` / 2,
@@ -593,9 +595,9 @@ años_criticos <- t_critico / gen_por_año
 
 message(sprintf(
   "Ne actual = %.0f: umbral F = 10%% alcanzado en generacion %.0f (aprox. %.1f anios).",
-  round(ne_harm), floor(t_critico), años_criticos
+  round(ne_harm), floor(t_critico), años_criticos))
 
-  ne_objetivo_data <- tibble(
+ne_objetivo_data <- tibble(
   Criterio = c(
     paste0("Ne actual\n(", round(ne_harm), ")"),
     "Franklin\ncorto plazo\n(Ne = 50)",
@@ -624,6 +626,7 @@ ggplot(ne_objetivo_data, aes(x = Criterio, y = Ne, fill = Tipo)) +
     axis.text.x     = element_text(size = 8.5, lineheight = 0.85),
     legend.position = "bottom"
   )
-))
 
 rmarkdown::render("Diatraea saccharalis Ne.Rmd")
+rmarkdown::render("Anticarsia gemmatalis Ne.Rmd")
+rmarkdown::render("Spodoptera cosmioides Ne.Rmd")

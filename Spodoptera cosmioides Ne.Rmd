@@ -1,5 +1,5 @@
 ---
-title: "Tamaño Efectivo de Población de Anticarsia gemmtalis Capdevila del Insectario de Argentina - Crop Science - Bayer"
+title: "Tamaño Efectivo de Población de Spodoptera cosmioides del Insectario de Argentina - Crop Science - Bayer"
 author: "Valentina Tornello, Carla Serre"
 date: "`r Sys.Date()`"
 output:
@@ -26,7 +26,7 @@ knitr::opts_chunk$set(
 
 # Introducción
 
-*Anticarsia gemmatalis* (Lepidoptera: Erebidae), conocida comúnmente como oruga de las leguminosas u oruga militar tardía, es una de las principales plagas defoliadoras del cultivo de soja en Sudamérica. Su cría masiva en insectario es indispensable para los ensayos de eficacia y de monitoreo de resistencia.
+*Spodoptera cosmioides* (Lepidoptera: Noctuidae) es una plaga defoliadora de importancia para los ensayos de eficacia y el monitoreo de resistencia. Su cría masiva exige separar el volumen de emergencia del número de adultos que efectivamente participan en la reproducción.
 
 ## Tamaño Efectivo de Población (Ne) en colonias de insectario
 
@@ -68,30 +68,26 @@ head(data)
 
 # Filtrado y preparación de datos
 
-## Selección de registros de *A. gemmatalis*
+## Selección de registros de *S. cosmioides*
 
-Se retienen únicamente los registros correspondientes a la especie *A. gemmatalis* en la etapa de **Cría**, a partir del 1 de enero de 2024. Se crean variables auxiliares de año (`year`) y semana ISO (`week`) para análisis temporales posteriores. Existen actualmente dos poblaciones en el insectario cuyo nombre indica su proveniencia: Capdevila y Gualeguaychú. Nuestra hipótesis es que la población de Gualeguaychú actualmente presenta muchos baches y no la consideramos referente para realizar el análisis pues es probable que presente mayor endocría. Por esta razón, haremos un análisis exploratorio inicial de cada población para luego definir con cuáles datos queremos continuar el análisis y ver si es posible tomar todos los datos juntos o es necesario elegir una de las dos poblaciones.
+Se retienen únicamente los registros correspondientes a *S. cosmioides* en la etapa de **Cría**, a partir del 1 de enero de 2024. Se crean variables auxiliares de año (`year`) y semana ISO (`week`) para análisis temporales posteriores. Como la planilla identifica esta especie como un único grupo, no se impone una separación histórica por población.
 
 ```{r exploratorio-poblaciones}
-anticarsia_todas <- data |>
+spodoptera_todas <- data |>
   rename(Lote_produccion = `Lote de Produccion`) |>
   # la columna Etapa tiene variantes de tipeo ("cria", "cría", "Cría")
   filter(
-    str_detect(Especie, "^A\\. gemmatalis"),
+    str_detect(Especie, "^S\\. cosmioides$"),
     str_to_lower(str_trim(Etapa)) == "cría" | str_to_lower(str_trim(Etapa)) == "cria",
     Fecha >= as.Date("2024-01-01")
   ) |>
   mutate(
     year = year(Fecha),
     week = isoweek(Fecha),
-    Poblacion = case_when(
-      str_detect(Especie, "Capdevila")   ~ "Capdevila",
-      str_detect(Especie, "Gualeguaychú") ~ "Gualeguaychú",
-      TRUE                                ~ "Sin identificar"
-    )
+    Poblacion = "S. cosmioides"
   )
 
-exploratorio_poblaciones <- anticarsia_todas %>%
+exploratorio_poblaciones <- spodoptera_todas %>%
   group_by(Poblacion) %>%
   summarise(
     Registros       = n(),
@@ -105,11 +101,11 @@ exploratorio_poblaciones <- anticarsia_todas %>%
 kable(exploratorio_poblaciones,
       col.names = c("Población", "Registros", "Lotes", "Primer registro",
                     "Último registro", "Semanas con actividad"),
-      caption = "Comparación exploratoria de las dos poblaciones de A. gemmatalis")
+      caption = "Actividad histórica de S. cosmioides")
 ```
 
 ```{r exploratorio-continuidad, fig.height=3.5}
-anticarsia_todas %>%
+spodoptera_todas %>%
   count(Poblacion, year, week) %>%
   mutate(fecha_aprox = as.Date(paste(year, week, 1, sep = "-"), format = "%Y-%U-%u")) %>%
   ggplot(aes(x = fecha_aprox, y = n, color = Poblacion)) +
@@ -123,13 +119,12 @@ anticarsia_todas %>%
   theme(legend.position = "bottom")
 ```
 
-La población de Gualeguaychú presenta una serie temporal discontinua (con baches entre lotes), mientras que Capdevila muestra actividad sostenida. Por ello el análisis de Ne se realiza sobre la población **Capdevila**.
+El análisis histórico utiliza todos los lotes de *S. cosmioides* disponibles desde 2024. La jaula grande descrita en el manejo actual se interpreta como una etapa de emergencia, no como la unidad reproductiva final.
 
 ```{r filtrado-especie}
-datos_anticarsia <- anticarsia_todas |>
-  filter(Poblacion == "Capdevila")
+datos_spodoptera <- spodoptera_todas
 
-datos_anticarsia
+datos_spodoptera
 
 ```
 
@@ -138,7 +133,7 @@ datos_anticarsia
 Se asegura que `Cantidad` sea numérica y se eliminan espacios residuales en la columna `Actividad`, lo cual es esencial para que los filtros y agrupaciones posteriores funcionen correctamente.
 
 ```{r conversion-tipos}
-datos_anticarsia <- datos_anticarsia %>%
+datos_spodoptera <- datos_spodoptera %>%
   mutate(
     Cantidad         = as.numeric(Cantidad),
     Actividad        = trimws(Actividad),
@@ -151,7 +146,7 @@ datos_anticarsia <- datos_anticarsia %>%
 Se eliminan filas con `NA` en `Cantidad` o `Actividad`, que corresponden a registros incompletos o pendientes en el sistema de seguimiento.
 
 ```{r limpieza-na}
-datos_anticarsia <- datos_anticarsia %>%
+datos_spodoptera <- datos_spodoptera %>%
   filter(!is.na(Cantidad), !is.na(Actividad))
 ```
 
@@ -160,7 +155,7 @@ datos_anticarsia <- datos_anticarsia %>%
 El siguiente gráfico muestra el porcentaje de registros con `NA` para cada actividad antes de la limpieza, permitiendo identificar etapas del ciclo con mayor frecuencia de datos faltantes.
 
 ```{r qc-plot}
-qc_plot <- datos_anticarsia %>%
+qc_plot <- datos_spodoptera %>%
   group_by(Actividad) %>%
   summarise(
     total     = n(),
@@ -178,36 +173,29 @@ kable(qc_plot, digits = 2,
 
 # Cálculo del *Pupae Recovery*
 
-## Parámetros operativos actuales
+## Parámetros operativos actuales (2026)
 
-El manejo operativo actual de *A. gemmatalis* utiliza **20 larvas por bandeja**, con **50 bandejas por transferencia** y **tres transferencias por semana**. El objetivo semanal es, por lo tanto, de **3.000 larvas**. Estos valores describen el protocolo vigente y no deben imputarse retrospectivamente a todos los lotes históricos.
+Desde 2026 se transfieren **1.024 larvas por transferencia**, con dos transferencias semanales. El objetivo operativo semanal es, por lo tanto, **2.048 larvas**. Como referencia del manejo actual, las pupas se envían a emerger en una jaula grande con aproximadamente **520 pupas** y luego los adultos se distribuyen en jaulas chicas de **60 adultos**. Estos valores describen la operación vigente y no se imputan retrospectivamente a los datos de los dos años anteriores.
 
-En la etapa adulta se trabaja con una **jaula grande de 100 adultos** y jaulas chicas de **20 adultos**. En la práctica se prioriza mantener la jaula grande porque resulta más rápida y cómoda para la operación. La jaula grande con cierre se utiliza únicamente para el **nacimiento**; la jaula grande de marcos, con papeles y techo con rendijas, es la que se mantiene operativamente para el manejo de la colonia. Estas configuraciones deben registrarse como unidades de manejo y no asumirse automáticamente como equivalentes reproductivos.
-
-La contaminación de la dieta está documentada y debe incorporarse como **covariable y alerta de calidad**, no solo como observación sanitaria. Puede afectar digestión, desarrollo, supervivencia, bioseguridad y calidad de colonia, por lo que debe contrastarse con Pupae Recovery, emergencia, mortalidad y viabilidad de huevos.
+La jaula grande funciona como **etapa de emergencia** y no como unidad reproductiva final. La unidad que debe vincularse con el aporte genético es la jaula chica y, especialmente, el número de adultos vivos que contribuye a cada postura. La oviposición se realiza con el sistema de **“fantasmas”**.
 
 ```{r parametros-operativos}
-larvas_por_bandeja_actual <- 20
-bandejas_por_transferencia_actual <- 50
-transferencias_por_semana_actual <- 3
-target_larvas_semanal_actual <- larvas_por_bandeja_actual *
-  bandejas_por_transferencia_actual * transferencias_por_semana_actual
-adultos_jaula_grande_actual <- 100
-adultos_jaula_chica_actual <- 20
+larvas_por_transferencia_2026 <- 1024
+transferencias_por_semana_2026 <- 2
+target_larvas_semanal_2026 <- larvas_por_transferencia_2026 * transferencias_por_semana_2026
+pupas_jaula_grande_actual <- 520
+adultos_por_jaula_chica_actual <- 60
+emergencia_promedio <- 0.80
 
 parametros_operativos <- tibble(
-  Parametro = c("Larvas por bandeja", "Bandejas por transferencia",
-                "Transferencias por semana", "Target semanal de larvas",
-                "Adultos por jaula grande", "Adultos por jaula chica"),
-  Valor = c(larvas_por_bandeja_actual,
-            bandejas_por_transferencia_actual,
-            transferencias_por_semana_actual,
-            target_larvas_semanal_actual,
-            adultos_jaula_grande_actual,
-            adultos_jaula_chica_actual)
+  Parametro = c("Larvas por transferencia", "Transferencias por semana",
+                "Target semanal de larvas", "Pupas en jaula grande",
+                "Adultos por jaula chica", "Emergencia promedio"),
+  Valor = c(larvas_por_transferencia_2026, transferencias_por_semana_2026,
+            target_larvas_semanal_2026, pupas_jaula_grande_actual,
+            adultos_por_jaula_chica_actual, "80%")
 )
-kable(parametros_operativos,
-      caption = "Parámetros operativos actuales de A. gemmatalis")
+kable(parametros_operativos, caption = "Parámetros operativos actuales de S. cosmioides (2026)")
 ```
 
 ## Fundamento biológico
@@ -217,7 +205,7 @@ El **Pupae Recovery** (o tasa de recuperación de pupas) es la proporción de la
 $$PR = \frac{N_{pupas\,colectadas}}{N_{larvas\,transferidas}} \times 100$$
 
 ```{r pupae-recovery}
-pupae_recovery <- datos_anticarsia %>%
+pupae_recovery <- datos_spodoptera %>%
   filter(Actividad %in% c("Transferencia", "Colecta de pupas")) %>%
   group_by(Lote_produccion) %>%
   summarise(
@@ -246,33 +234,27 @@ print(lotes_sin_transferencia)
 cat("\nLotes con Pupae_Recovery NA:", sum(is.na(pupae_recovery$Pupae_Recovery)), "\n")
 ```
 
-## Cálculo de Emergencia 
+## Cálculo de Emergencia
 
-Se midió la emergencia del lote 111, donde de 47 pupas Hembras emergieron 37 adultos y de 34 Pupas Machos se contaron 26 adultos emergidos.
+Para *S. cosmioides* se utiliza una **emergencia promedio de 80%** como supuesto operativo. Es una conversión de pupas a adultos emergidos estimados y debe reemplazarse por tasas observadas por lote cuando estén disponibles.
 ```{r porcentaje-emergencia}
-emergencia_hembras <- (37*100)/47 
-emergencia_machos <- (26*100)/34
-emergencia_total <- ((37 + 26) * 100) / (47 + 34)
-
-# Resultados
-emergencia_hembras   # 78.72 %
-emergencia_machos    # 76.47 %
-emergencia_total     # 77.78 %
+emergencia_total <- emergencia_promedio * 100
+emergencia_total
 ```
 
 ## Depuración final del dataset
 
-Se eliminan los lotes con Pupae Recovery (%) igual a NA, con larvas = 0 y pupas > 0 (registros inconsistentes), y aquellos con Pupae Recovery > 100% (biológicamente imposibles, que indican errores de registro o mezcla de lotes).
+Se eliminan los lotes con Pupae Recovery (%) igual a NA, con larvas = 0 y pupas > 0 (registros inconsistentes), y aquellos con PR > 100% (biológicamente imposibles, que indican errores de registro o mezcla de lotes).
 
 ```{r depuracion}
 pupae_recovery <- pupae_recovery %>%
   filter(!is.na(Pupae_Recovery))
 
-datos_anticarsia <- datos_anticarsia %>%
+datos_spodoptera <- datos_spodoptera %>%
   filter(!(Lote_produccion %in% lotes_sin_transferencia$Lote_produccion)) %>%
   filter(!(Lote_produccion %in% pupae_recovery$Lote_produccion[pupae_recovery$Pupae_Recovery > 100]))
 
-lotes_evaluados <- datos_anticarsia %>%
+lotes_evaluados <- datos_spodoptera %>%
   group_by(Lote_produccion) %>%
   summarise(n = n(), .groups = "drop") %>%
   nrow()
@@ -284,35 +266,35 @@ cat("Número de lotes de producción evaluados:", lotes_evaluados, "\n")
 
 # Estadísticas descriptivas por actividad
 
-Las siguientes estadísticas resumen el rendimiento promedio de la colonia para cada etapa del ciclo de cría de *A. gemmatalis*. Estas métricas son los puntapié para la estimación del tamaño efectivo de población.
+Las siguientes estadísticas resumen el rendimiento promedio de la colonia para cada etapa del ciclo de cría de *S. cosmioides*. Estas métricas son el punto de partida para la estimación del tamaño efectivo de población.
 
 ```{r resumen-actividades}
-resumen_anticarsia <- bind_rows(
-  datos_anticarsia %>%
+resumen_spodoptera <- bind_rows(
+  datos_spodoptera %>%
     filter(Actividad == "Lavado y número de huevos") %>%
     summarise(Variable = "Huevos Lavados",
               Media = mean(Cantidad, na.rm = TRUE),
               Desvio_estandar = sd(Cantidad, na.rm = TRUE),
               N = sum(!is.na(Cantidad))),
-  datos_anticarsia %>%
+  datos_spodoptera %>%
     filter(Actividad == "Inoculación") %>%
     summarise(Variable = "Huevos Inoculados",
               Media = mean(Cantidad, na.rm = TRUE),
               Desvio_estandar = sd(Cantidad, na.rm = TRUE),
               N = sum(!is.na(Cantidad))),
-  datos_anticarsia %>%
+  datos_spodoptera %>%
     filter(Actividad == "Viabilidad de huevos") %>%
     summarise(Variable = "Viabilidad de huevos (%)",
               Media = mean(Cantidad, na.rm = TRUE),
               Desvio_estandar = sd(Cantidad, na.rm = TRUE),
               N = sum(!is.na(Cantidad))),
-  datos_anticarsia %>%
+  datos_spodoptera %>%
     filter(Actividad == "Transferencia") %>%
     summarise(Variable = "Larvas Transferidas",
               Media = mean(Cantidad, na.rm = TRUE),
               Desvio_estandar = sd(Cantidad, na.rm = TRUE),
               N = sum(!is.na(Cantidad))),
-  datos_anticarsia %>%
+  datos_spodoptera %>%
     filter(Actividad == "Colecta de pupas") %>%
     summarise(Variable = "Pupas Colectadas",
               Media = mean(Cantidad, na.rm = TRUE),
@@ -320,9 +302,9 @@ resumen_anticarsia <- bind_rows(
               N = sum(!is.na(Cantidad)))
 )
 
-kable(resumen_anticarsia, digits = 2,
+kable(resumen_spodoptera, digits = 2,
       col.names = c("Variable", "Media", "Desvío estándar", "N"),
-      caption    = "Tabla 1. Estadísticas descriptivas por actividad del ciclo de cría de A. gemmatalis (2024-2026)")
+      caption    = "Tabla 1. Estadísticas descriptivas por actividad del ciclo de cría de S. cosmioides (2024-2026)")
 ```
 
 ---
@@ -331,12 +313,12 @@ kable(resumen_anticarsia, digits = 2,
 
 ## Estimación del número de adultos emergidos
 
-La transición de pupa a adulto es la última etapa antes de la reproducción y representa el cuello de botella más relevante para estimar el Ne. En ausencia de datos directos de emergencia adulta por lote, se aplica un factor de emergencia promedio del 77.78%, derivado de estudios previos de biología del ciclo de vida de *A. gemmatalis* en condiciones de insectario (Informe Biología de Lepidópteros, 2019). Este valor refleja las pérdidas acumuladas por mortalidad pupal, deformidades y falta de emergencia.
+La transición de pupa a adulto es la última etapa antes de la reproducción y representa un cuello de botella para estimar el Ne. En ausencia de datos directos de emergencia adulta por lote, se aplica una emergencia promedio de **80%**. Este valor refleja, como supuesto operativo, las pérdidas acumuladas por mortalidad pupal, deformidades y falta de emergencia.
 
-$$N_{adultos} = N_{pupas} \times 0.7778$$
+$$N_{adultos} = N_{pupas} \times 0.80$$
 
 ```{r adultos-por-lote}
-adultos_por_lote <- datos_anticarsia %>%
+adultos_por_lote <- datos_spodoptera %>%
   filter(Actividad == "Colecta de pupas") %>%
   group_by(Lote_produccion) %>%
   summarise(
@@ -351,10 +333,10 @@ adultos_por_lote
 Se pivota el dataset para obtener una fila por lote con todas las variables de interés como columnas, incluyendo el Pupae Recovery y los adultos emergidos estimados.
 
 ```{r tabla-ancha}
-datos_anticarsia <- datos_anticarsia %>%
+datos_spodoptera <- datos_spodoptera %>%
   filter(!Actividad %in% c("Armado de jaulas", "Cambio de jaulas"))
 
-datos_anticarsia_transpose <- datos_anticarsia %>%
+datos_spodoptera_transpose <- datos_spodoptera %>%
   select(Lote_produccion, Actividad, Cantidad) %>%
   group_by(Lote_produccion, Actividad) %>%
   summarise(Cantidad = sum(Cantidad, na.rm = TRUE), .groups = "drop") %>%
@@ -371,8 +353,37 @@ datos_anticarsia_transpose <- datos_anticarsia %>%
       NA_real_
     )
   )
-datos_anticarsia_transpose
+datos_spodoptera_transpose
 ```
+
+## Ne reproductivo por postura y tiempo
+
+El Ne calculado arriba es una **línea base demográfica por lote** y no sustituye la medición del aporte reproductivo. En *S. cosmioides*, el informe operativo indica que 100 adultos pueden aumentar la producción de huevos en las primeras posturas, pero presentar una interacción negativa en la tercera; además, pasar de 60 a 100 u 80 a 100 adultos incrementa la mortalidad. Por eso, el número inicial de adultos en una jaula no es un proxy suficiente de Ne.
+
+La unidad de análisis recomendada es una **jaula chica × postura × tiempo**, registrando al menos: adultos vivos por sexo al inicio y en cada postura, huevos producidos, huevos viables, mortalidad de adultos, fecha o edad de la postura y jaula de origen. La jaula grande (520 pupas) debe registrarse solo como etapa de emergencia; no debe contarse como una unidad reproductiva ni mezclarse con las jaulas chicas de 60 adultos.
+
+Con esos datos, el aporte relativo de cada jaula puede resumirse como:
+
+$$C_j = \sum_{p=1}^{P} w_p \times H_{jp}$$
+
+donde $H_{jp}$ es el número de huevos viables de la jaula $j$ en la postura $p$ y $w_p$ es un peso temporal definido antes del análisis. El Ne reproductivo debe estimarse comparando la distribución de $C_j$ entre jaulas y posturas, no solo el número inicial de adultos. Hasta que exista ese registro longitudinal, los valores de Ne de este informe deben interpretarse como **Ne demográfico aproximado**.
+
+```{r plantilla-posturas}
+registro_posturas_recomendado <- tibble(
+  Campo = c("Jaula chica", "Postura", "Fecha/edad", "Hembras vivas",
+    "Machos vivos", "Huevos totales", "Huevos viables", "Adultos muertos"),
+  Uso = c("Identifica la unidad reproductiva", "Orden temporal de oviposición",
+      "Permite modelar el efecto del tiempo", "Denominador reproductivo",
+      "Denominador reproductivo", "Producción", "Aporte genético proxy",
+      "Alerta de mortalidad")
+)
+kable(registro_posturas_recomendado,
+  caption = "Campos mínimos para estimar Ne reproductivo por jaula, postura y tiempo")
+```
+
+### Alerta de calidad biológica
+
+La contaminación bacteriana debe entrar como **covariable y alerta** en el análisis de *S. cosmioides* cuando se registre. Puede afectar digestión, desarrollo, bioseguridad y calidad de colonia; por lo tanto, un lote contaminado no debe tratarse únicamente como un evento sanitario separado. Se recomienda registrar estado de contaminación, fecha, lote, etapa afectada y severidad, y contrastarlo con Pupae Recovery, emergencia, mortalidad y producción de huevos. Esta covariable no puede estimarse retrospectivamente si no existe en la planilla histórica.
 
 ## Fórmula del Ne con sex ratio equitativo
 
@@ -387,7 +398,7 @@ $$N_e = N_{adultos}$$
 La fórmula completa se retiene porque en estudios futuros con datos de sex ratio observado, los valores de $N_f$ y $N_m$ podrían diferir, afectando significativamente la estimación de Ne.
 
 ```{r calculo-ne}
-datos_anticarsia_transpose <- datos_anticarsia_transpose %>%
+datos_spodoptera_transpose <- datos_spodoptera_transpose %>%
   mutate(
     N_hembras = `Adultos emergidos` / 2,
     N_machos  = `Adultos emergidos` / 2,
@@ -402,7 +413,7 @@ datos_anticarsia_transpose <- datos_anticarsia_transpose %>%
 ## Resumen de Ne y variables asociadas
 
 ```{r resumen-ne}
-resumen_anticarsia_transpose <- datos_anticarsia_transpose %>%
+resumen_spodoptera_transpose <- datos_spodoptera_transpose %>%
   summarise(
     across(
       c(Transferencia, `Colecta de pupas`, `Pupae Recovery`,
@@ -412,11 +423,11 @@ resumen_anticarsia_transpose <- datos_anticarsia_transpose %>%
     )
   )
 
-kable(resumen_anticarsia_transpose, digits = 2,
+kable(resumen_spodoptera_transpose, digits = 2,
       col.names = c(
         "Transf. Media", "Transf. DE",
         "Pupas Media",   "Pupas DE",
-        "Pupae Recovery Medio",      "PR DE",
+        "PR Media",      "PR DE",
         "Adultos Media", "Adultos DE",
         "Nf Media",      "Nf DE",
         "Nm Media",      "Nm DE",
@@ -432,13 +443,13 @@ La **media armónica** es el estimador apropiado del Ne efectivo de la colonia a
 $$\bar{N}_{e,arm} = \frac{k}{\sum_{i=1}^{k} \frac{1}{N_{e,i}}}$$
 
 ```{r ne-armonico}
-datos_anticarsia_transpose <- datos_anticarsia_transpose %>%
+datos_spodoptera_transpose <- datos_spodoptera_transpose %>%
   left_join(
-    datos_anticarsia %>% select(Lote_produccion, year) %>% distinct(),
+    datos_spodoptera %>% select(Lote_produccion, year) %>% distinct(),
     by = "Lote_produccion"
   )
 
-ne_harm <- datos_anticarsia_transpose %>%
+ne_harm <- datos_spodoptera_transpose %>%
   filter(!is.na(Ne), Ne > 0) %>%
   { nrow(.) / sum(1 / .$Ne) }
 
@@ -463,7 +474,7 @@ El valor obtenido (**`r round(ne_harm, 1)` individuos**) no es un conteo de adul
 La correlación entre larvas transferidas y pupas colectadas refleja la **eficiencia de la fase larval**: una pendiente cercana a la esperada por el Pupae Recovery promedio indica estabilidad en el protocolo de cría; desviaciones sistemáticas sugieren cambios en la calidad del sustrato o la densidad larval por bandeja.
 
 ```{r plot-larvas-pupas}
-p1 <- ggplot(datos_anticarsia_transpose, aes(x = Transferencia, y = `Colecta de pupas`)) +
+p1 <- ggplot(datos_spodoptera_transpose, aes(x = Transferencia, y = `Colecta de pupas`)) +
   geom_point(color = "#2c7fb8", size = 2.5, alpha = 0.8) +
   geom_smooth(method = "lm", se = TRUE, color = "#d73027") +
   stat_regline_equation(aes(label = after_stat(eq.label)),
@@ -479,10 +490,10 @@ p1
 
 ## Relación entre pupas colectadas y adultos emergidos
 
-Por construcción (factor de emergencia = `r round(emergencia_total / 100, 4)`, calculado a partir de los datos de emergencia del lote 111), esta relación es completamente lineal. No obstante, el gráfico permite verificar la consistencia de los datos y detectar lotes atípicos (outliers) que podrían indicar mortalidad pupal inusualmente alta o baja.
+Por construcción (factor de emergencia = `r round(emergencia_total / 100, 4)`), esta relación es completamente lineal. No obstante, el gráfico permite verificar la consistencia de los datos y detectar lotes atípicos (outliers) que podrían indicar mortalidad pupal inusualmente alta o baja.
 
 ```{r plot-pupas-adultos}
-p2 <- ggplot(datos_anticarsia_transpose, aes(x = `Colecta de pupas`, y = `Adultos emergidos`)) +
+p2 <- ggplot(datos_spodoptera_transpose, aes(x = `Colecta de pupas`, y = `Adultos emergidos`)) +
   geom_point(color = "#1a9850", size = 2.5, alpha = 0.8) +
   geom_smooth(method = "lm", se = TRUE, color = "#d73027") +
   stat_regline_equation(aes(label = after_stat(eq.label)),
@@ -501,10 +512,10 @@ p2
 La distribución del PR es un indicador de la homogeneidad del proceso de cría. Una distribución unimodal y simétrica indica condiciones de producción estables; una distribución asimétrica hacia la izquierda o multimodal puede señalar variabilidad estacional, lotes contaminados o cambios en el protocolo de cría.
 
 ```{r plot-pupae-recovery}
-p3 <- ggplot(datos_anticarsia_transpose, aes(x = `Pupae Recovery`)) +
+p3 <- ggplot(datos_spodoptera_transpose, aes(x = `Pupae Recovery`)) +
   geom_histogram(bins = 20, fill = "#74add1", color = "white", alpha = 0.9) +
   geom_vline(
-    xintercept = mean(datos_anticarsia_transpose$`Pupae Recovery`, na.rm = TRUE),
+    xintercept = mean(datos_spodoptera_transpose$`Pupae Recovery`, na.rm = TRUE),
     linetype = "dashed", color = "#d73027", linewidth = 1
   ) +
   labs(title = "Distribución de Pupae Recovery (%)",
@@ -519,13 +530,13 @@ p3
 La viabilidad de huevos es el primer indicador de la calidad reproductiva de los adultos de la generación parental. Valores consistentemente bajos pueden reflejar endogamia acumulada, deficiencias nutricionales en los adultos, o condiciones subóptimas de appareamiento en las jaulas.
 
 ```{r plot-viabilidad-huevos}
-p4 <- datos_anticarsia %>%
+p4 <- datos_spodoptera %>%
   filter(Actividad == "Viabilidad de huevos") %>%
   ggplot(aes(x = Cantidad)) +
   geom_histogram(bins = 20, fill = "#fdae61", color = "white", alpha = 0.9) +
   geom_vline(
     xintercept = mean(
-      datos_anticarsia$Cantidad[datos_anticarsia$Actividad == "Viabilidad de huevos"],
+      datos_spodoptera$Cantidad[datos_spodoptera$Actividad == "Viabilidad de huevos"],
       na.rm = TRUE
     ),
     linetype = "dashed", color = "#d73027", linewidth = 1
@@ -540,7 +551,7 @@ p4
 ## Distribución comparativa de variables clave
 
 ```{r plot-boxplots}
-p6 <- datos_anticarsia_transpose %>%
+p6 <- datos_spodoptera_transpose %>%
   select(Lote_produccion, Transferencia, `Colecta de pupas`, `Adultos emergidos`) %>%
   tidyr::pivot_longer(-Lote_produccion, names_to = "Variable", values_to = "Valor") %>%
   ggplot(aes(x = Variable, y = Valor, fill = Variable)) +
@@ -560,7 +571,7 @@ p6
 El siguiente gráfico de barras representa el tamaño poblacional promedio en cada etapa del ciclo de cría (Transferencia → Pupas → Adultos emergidos → Ne estimado), evidenciando el efecto de cuello de botella acumulado desde las larvas hasta la generación adulta reproductora. La línea punteada corresponde a la media armónica del Ne entre lotes, que es el valor de referencia más conservador para la gestión genética de la colonia.
 
 ```{r plot-ne-ciclo}
-ne_promedio <- resumen_anticarsia_transpose %>%
+ne_promedio <- resumen_spodoptera_transpose %>%
   summarise(
     Transferencia       = `Transferencia_Media`,
     `Colecta de pupas`  = `Colecta de pupas_Media`,
@@ -577,7 +588,7 @@ grafico_ne <- ggplot(ne_promedio, aes(x = Variable, y = Ne, fill = Variable)) +
   annotate("text", x = Inf, y = ne_harm,
            label  = paste0("Ne arm. = ", round(ne_harm, 1)),
            hjust  = 1.1, vjust = -0.4, color = "#d73027", size = 3.5) +
-  labs(title = "Reducción del tamaño poblacional a través del ciclo de cría de A. gemmatalis",
+  labs(title = "Reducción del tamaño poblacional a través del ciclo de cría de S. cosmioides",
        x     = "Etapa del ciclo",
        y     = "Tamaño promedio") +
   theme_minimal(base_size = 12) +
@@ -593,15 +604,15 @@ grafico_ne
 Para una representación más completa del cuello de botella, se incluyen también los huevos lavados, los huevos inoculados y las larvas eclosionadas estimadas, que tienen órdenes de magnitud muy superiores a los adultos reproductores. Esto pone en perspectiva la intensidad de la selección y la reducción de Ne a lo largo de todo el ciclo.
 
 ```{r plot-ne-ciclo-completo, fig.height=5.5}
-Huevos_Lavados_Media <- resumen_anticarsia %>%
+Huevos_Lavados_Media <- resumen_spodoptera %>%
   filter(Variable == "Huevos Lavados") %>%
   pull(Media)
 
-Huevos_Inoculados_Media <- resumen_anticarsia %>%
+Huevos_Inoculados_Media <- resumen_spodoptera %>%
   filter(Variable == "Huevos Inoculados") %>%
   pull(Media)
 
-larvas_eclosionadas_media <- datos_anticarsia_transpose %>%
+larvas_eclosionadas_media <- datos_spodoptera_transpose %>%
   mutate(
     larvas_eclosionadas = Transferencia * (`Viabilidad de huevos` / 100)
   ) %>%
@@ -616,10 +627,10 @@ ne_promedio_completo <- tibble(
     Huevos_Lavados_Media,
     Huevos_Inoculados_Media,
     larvas_eclosionadas_media,
-    resumen_anticarsia_transpose$`Transferencia_Media`,
-    resumen_anticarsia_transpose$`Colecta de pupas_Media`,
-    resumen_anticarsia_transpose$`Adultos emergidos_Media`,
-    resumen_anticarsia_transpose$`Ne_Media`
+    resumen_spodoptera_transpose$`Transferencia_Media`,
+    resumen_spodoptera_transpose$`Colecta de pupas_Media`,
+    resumen_spodoptera_transpose$`Adultos emergidos_Media`,
+    resumen_spodoptera_transpose$`Ne_Media`
   )
 )
 
@@ -668,10 +679,10 @@ n_muestral_85 <- function(sd, error, z_score = 1.44)  ceiling((z_score^2 * sd^2)
 ```
 
 ```{r calculo-n-muestral}
-sd_viabilidad  <- resumen_anticarsia %>% filter(Variable == "Viabilidad de huevos (%)") %>% pull(Desvio_estandar)
-sd_transferencia <- resumen_anticarsia %>% filter(Variable == "Larvas Transferidas")       %>% pull(Desvio_estandar)
-sd_pupas        <- resumen_anticarsia %>% filter(Variable == "Pupas Colectadas")           %>% pull(Desvio_estandar)
-sd_adultos      <- resumen_anticarsia_transpose %>% pull(`Adultos emergidos_DE`)
+sd_viabilidad  <- resumen_spodoptera %>% filter(Variable == "Viabilidad de huevos (%)") %>% pull(Desvio_estandar)
+sd_transferencia <- resumen_spodoptera %>% filter(Variable == "Larvas Transferidas")       %>% pull(Desvio_estandar)
+sd_pupas        <- resumen_spodoptera %>% filter(Variable == "Pupas Colectadas")           %>% pull(Desvio_estandar)
+sd_adultos      <- resumen_spodoptera_transpose %>% pull(`Adultos emergidos_DE`)
 
 tamanos_muestra <- tibble(
   Variable = c("Viabilidad de huevos (%)", "Larvas Transferidas",
@@ -701,7 +712,7 @@ tamanos_muestra <- tibble(
 kable(tamanos_muestra, digits = 2,
       col.names = c("Variable", "Desvío estándar", "Error (%)",
                     "n (95% IC)", "n (93% IC)", "n (90% IC)"),
-      caption   = "Tabla 3. Tamaño de muestra mínimo recomendado para el monitoreo de la colonia de A. gemmatalis")
+      caption   = "Tabla 3. Tamaño de muestra mínimo recomendado para el monitoreo de la colonia de S. cosmioides")
 ```
 
 ## Diferencia entre el tamaño muestral (n) y el tamaño efectivo de población (Ne)
@@ -828,7 +839,7 @@ kable(franklin_table,
 
 ## Generación crítica con el Ne actual
 
-A partir del Ne armónico calculado de los datos de producción, se estima la generación en la cual la colonia alcanzaría el umbral crítico de endogamia (F = 10%), asumiendo 6 generaciones anuales de *A. gemmatalis* en condiciones de insectario.
+A partir del Ne armónico calculado de los datos de producción, se estima la generación en la cual la colonia alcanzaría el umbral crítico de endogamia (F = 10%), asumiendo 6 generaciones anuales de *S. cosmioides* en condiciones de insectario.
 
 ```{r ne-critico}
 gen_por_año <- 6
@@ -848,14 +859,14 @@ El Ne se calcula sobre los **adultos**, porque son quienes efectivamente se repr
 
 $$N_{larvas} = \frac{N_{e,\text{obj}}}{TE \times PR}$$
 
-donde $TE$ es la tasa de emergencia pupa-adulto (`r round(emergencia_total / 100, 4)`, obtenida del ensayo de emergencia del lote 111) y $PR$ es el Pupae Recovery medio de la colonia. En síntesis: el Ne se calcula en adultos porque ahí vive el fenómeno genético, pero se recomienda en larvas porque es la única variable que el insectario puede accionar operativamente al inicio del ciclo.
+donde $TE$ es la tasa de emergencia pupa-adulto (`r round(emergencia_total / 100, 4)`, usada como promedio operativo) y $PR$ es el Pupae Recovery medio de la colonia. En síntesis: el Ne se calcula en adultos porque ahí vive el fenómeno genético, pero se recomienda en larvas porque es la única variable que el insectario puede accionar operativamente al inicio del ciclo.
 
 ```{r tabla-ne-minimo}
 Ne_para_t <- function(t, F_max = 0.10) {
   ceiling(-1 / (2 * ((1 - F_max)^(1/t) - 1)))
 }
 
-PR_media        <- resumen_anticarsia_transpose$`Pupae Recovery_Media` / 100
+PR_media        <- resumen_spodoptera_transpose$`Pupae Recovery_Media` / 100
 tasa_emergencia <- emergencia_total / 100
 
 horizontes <- tibble(
@@ -865,7 +876,7 @@ horizontes <- tibble(
   mutate(
     Ne_minimo         = ceiling(-1 / (2 * (0.90^(1/Generaciones) - 1))),
     Ne_actual         = round(ne_harm),
-    Larvas_actuales   = round(resumen_anticarsia_transpose$Transferencia_Media),
+    Larvas_actuales   = round(resumen_spodoptera_transpose$Transferencia_Media),
     Larvas_necesarias = ceiling(Ne_minimo / tasa_emergencia / PR_media),
     Estado            = if_else(Ne_actual >= Ne_minimo, "Suficiente", "Insuficiente")
   )
@@ -879,7 +890,7 @@ kable(horizontes,
       caption = "Tabla 6. Ne minimo para distintos horizontes y su equivalente en larvas transferidas por lote, calculado con los datos de produccion de la colonia.")
 ```
 
-**Importante — cómo leer la Tabla 6:** la columna `Estado` compara **Ne actual vs. Ne mínimo** (dos parámetros genéticos), *no* compara `Larvas/lote actuales` contra `Larvas/lote necesarias`. Se incluye la columna de larvas actuales para mostrar que, aunque hoy ya se transfieren en promedio `r round(resumen_anticarsia_transpose$Transferencia_Media)` larvas por lote —una cifra que supera a la "Larvas/lote necesarias" de varios horizontes—, eso **no** alcanza para llegar al Ne mínimo requerido. La razón es que el Ne armónico actual (45) no depende solo del volumen de larvas transferidas, sino de cuántos adultos terminan reproduciéndose de forma equilibrada entre lotes: la media armónica penaliza fuertemente los lotes con pocos adultos o alta mortalidad, aunque el promedio censal de larvas sea alto. Por eso, para subir el Ne real hace falta no solo transferir más larvas, sino reducir la variabilidad de rendimiento entre lotes (mejorar Pupae Recovery y emergencia de forma más pareja).
+**Importante — cómo leer la Tabla 6:** la columna `Estado` compara **Ne actual vs. Ne mínimo** (dos parámetros genéticos), *no* compara `Larvas/lote actuales` contra `Larvas/lote necesarias`. Se incluye la columna de larvas actuales para mostrar que, aunque hoy ya se transfieren en promedio `r round(resumen_spodoptera_transpose$Transferencia_Media)` larvas por lote —una cifra que supera a la "Larvas/lote necesarias" de varios horizontes—, eso **no** alcanza para llegar al Ne mínimo requerido. La razón es que el Ne armónico no depende solo del volumen de larvas transferidas, sino de cuántos adultos terminan reproduciéndose de forma equilibrada entre lotes: la media armónica penaliza fuertemente los lotes con pocos adultos o alta mortalidad, aunque el promedio censal de larvas sea alto. Por eso, para subir el Ne real hace falta no solo transferir más larvas, sino reducir la variabilidad de rendimiento entre lotes (mejorar Pupae Recovery y emergencia de forma más pareja).
 
 ## Recomendación operativa: con qué números continuar la cría
 
@@ -946,7 +957,7 @@ ggplot(ne_objetivo_data, aes(x = Criterio, y = Ne, fill = Tipo)) +
 
 # Conclusiones
 
-1. **Ne estimado de la colonia**: La media armónica del Ne entre lotes es de **`r round(ne_harm, 1)` individuos**, calculada sobre los adultos emergidos estimados con el factor de emergencia observado en el lote 111 (`r round(emergencia_total, 2)`%). Este número representa la cantidad *efectiva* de reproductores que gobierna la deriva genética de la colonia, y es menor que el número censal de adultos porque descuenta el efecto de los lotes con reproducción desbalanceada.
+1. **Ne estimado de la colonia**: La media armónica del Ne entre lotes es de **`r round(ne_harm, 1)` individuos**, calculada sobre adultos emergidos estimados con una emergencia promedio operativa de `r round(emergencia_total, 2)`%. Es un Ne demográfico aproximado y no reemplaza el Ne reproductivo por postura y tiempo.
 
 2. **Cuello de botella principal**: La mayor reducción en tamaño poblacional ocurre en la transición larva → pupa → adulto, donde el Pupae Recovery y la tasa de emergencia determinan el Ne final disponible para la reproducción.
 
@@ -956,7 +967,7 @@ ggplot(ne_objetivo_data, aes(x = Criterio, y = Ne, fill = Tipo)) +
 
 5. **Tamaño muestral (n) — no es Ne**: el n muestral (Tabla 3) es un parámetro de **diseño de muestreo estadístico**, no una medida genética. Se recomienda evaluar un mínimo de **`r n_muestral(sd_adultos, error = 5)` lotes** por ciclo de monitoreo para estimar el número de adultos emergidos con un error máximo del 5% (IC 95%). Este número sirve para planificar **proyectos de investigación** o auditorías de calidad de la producción, y no debe usarse como sustituto del Ne al tomar decisiones de manejo genético.
 
-6. **Acciones de manejo**: Para mantener la viabilidad genética de la colonia a largo plazo, se recomienda (a) transferir el número de larvas indicado en el punto 4 por lote, maximizando el Ne mediante un mayor número de parejas reproductoras por jaula, (b) incorporar individuos de campo o de otras colonias antes de alcanzar la generación crítica (`r floor(t_critico)`), y (c) registrar sistemáticamente la tasa de emergencia adulta para refinar la estimación de Ne.
+6. **Acciones de manejo**: Para mantener la viabilidad genética de la colonia a largo plazo, se recomienda (a) sostener el objetivo actual de `r target_larvas_semanal_2026` larvas semanales, (b) tratar la jaula grande de 520 pupas solo como emergencia, (c) registrar la contribución de las jaulas chicas de 60 adultos por postura y tiempo, (d) vigilar la mortalidad al comparar 60, 80 y 100 adultos, y (e) registrar contaminación bacteriana como covariable y alerta junto con desarrollo, bioseguridad, mortalidad y producción de huevos.
 
 ---
 
